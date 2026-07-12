@@ -1,0 +1,97 @@
+import React from 'react';
+import { StageConfig } from '../utils';
+import {
+  Box,
+  Button,
+  Divider,
+  Paper,
+  FormControlLabel,
+  Stack,
+  Typography,
+  TextField,
+  Checkbox,
+} from '@mui/material';
+
+interface OnBoardingProps {
+  stage: StageConfig;
+  prolificId: string;
+  setProlificId: (id: string) => void;
+  consentGiven: boolean;
+  setConsentGiven: (consent: boolean) => void;
+  handleOnboardingSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+}
+
+export const OnBoarding: React.FC<OnBoardingProps> = ({
+  stage,
+  prolificId,
+  setProlificId,
+  consentGiven,
+  setConsentGiven,
+  handleOnboardingSubmit,
+}) => {
+  return (
+    <Paper elevation={2} sx={{ p: 4, borderRadius: 2 }}>
+      <Typography variant="h4" gutterBottom>
+        {stage.title}
+      </Typography>
+      <Typography variant="body1" sx={{ color: 'text.secondary', mb: 2 }}>
+        Thank you for participating in this Human-Computer Interaction study. Please review the
+        information below and provide your Prolific ID to begin.
+      </Typography>
+
+      <Divider sx={{ my: 3 }} />
+
+      <form onSubmit={handleOnboardingSubmit}>
+        <Stack spacing={4}>
+          <Box>
+            <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 'bold' }}>
+              1. Prolific ID
+            </Typography>
+            <TextField
+              fullWidth
+              variant="outlined"
+              label="Enter your Prolific ID"
+              value={prolificId}
+              onChange={(e) => setProlificId(e.target.value)}
+              required
+            />
+          </Box>
+
+          <Box>
+            <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 'bold' }}>
+              2. Informed Consent
+            </Typography>
+            <Paper
+              variant="outlined"
+              sx={{ p: 2, bgcolor: '#f5f5f5', maxHeight: 150, overflow: 'auto', mb: 2 }}
+            >
+              <Typography variant="body2">
+                By checking the box below, you acknowledge that you have read the study information,
+                you are over 18 years of age, and you consent to your anonymized data being used for
+                academic research purposes. You may withdraw at any time.
+              </Typography>
+            </Paper>
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={consentGiven}
+                  onChange={(e) => setConsentGiven(e.target.checked)}
+                />
+              }
+              label="I agree to participate in this study."
+            />
+          </Box>
+
+          <Button
+            type="submit"
+            variant="contained"
+            size="large"
+            disabled={!prolificId.trim() || !consentGiven}
+          >
+            Start Pre-Survey
+          </Button>
+        </Stack>
+      </form>
+    </Paper>
+  );
+};
