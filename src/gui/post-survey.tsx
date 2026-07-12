@@ -9,6 +9,21 @@ interface PostSurveyProps {
   handlePostSurveySubmit: (event: React.FormEvent<HTMLFormElement>) => void;
 }
 
+const bfneItems = [
+  'I worried about what the other chat members would think of me.',
+  'I was unconcerned even if I thought the other members were forming an unfavorable impression of me. ',
+  'I was afraid of the other members noticing my professional or academic shortcomings.',
+  'I rarely worried about what kind of impression I was making on the others.',
+  'I was afraid the other members would not approve of my responses.',
+  'I was afraid that the other members would find fault with me.',
+  'The opinion of other members of me did not bother me.',
+  'While I was typing, I worried about what the others might be thinking about me.',
+  'I was worried about what kind of impression I made in the chat.',
+  'Knowing the others might be judging me had little effect on me.',
+  'I felt I was too concerned with what the other chat members thought of me.',
+  'I worried that I would say or type the wrong thing',
+];
+
 export const PostSurvey: React.FC<PostSurveyProps> = ({
   stage,
   postSurvey,
@@ -35,13 +50,13 @@ export const PostSurvey: React.FC<PostSurveyProps> = ({
               Brief Fear of Negative Evaluation (State)
             </Typography>
             <Typography variant="body2" sx={{ color: 'text.secondary', mb: 3 }}>
-              1 = Not at all, 5 = Extremely
+              1 = Strongly Disagree, 2 = Disagree, 3 = Neutral, 4 = Agree, 5 = Strongly Agree
             </Typography>
             <Stack spacing={3}>
-              {Array.from({ length: 12 }, (_, i) => (
+              {bfneItems.map((itemText, i) => (
                 <Box key={`bfne-${i}`}>
                   <Typography variant="body1" gutterBottom>
-                    Item {i + 1}
+                    {i + 1}. {itemText}
                   </Typography>
                   <Slider
                     value={(postSurvey[`BFNE_${i + 1}`] as number) || 3}
