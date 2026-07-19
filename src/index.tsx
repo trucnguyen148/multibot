@@ -19,6 +19,7 @@ interface StageConfig {
   condition: string;
   title: string;
   allScripts?: Record<string, BotScript[]>;
+  completionCode?: string;
 }
 
 interface SurveyResponse {
@@ -37,47 +38,76 @@ interface ExperimentData {
 
 const experimentData = fallbackExperimentData as ExperimentData;
 
+const personalizeScripts = (
+  scripts: Record<string, BotScript[]>,
+  userName: string
+): Record<string, BotScript[]> => {
+  const personalized: Record<string, BotScript[]> = {};
+  const nameToUse = userName.trim() ? userName.trim() : 'there';
+
+  for (const [stageKey, botScripts] of Object.entries(scripts)) {
+    personalized[stageKey] = botScripts.map((script) => ({
+      ...script,
+      text: script.text.replace(/\[User's Name\]/g, nameToUse),
+    }));
+  }
+  return personalized;
+};
+
+// Generate initial states so we never send empty data
+const initialPreSurvey: SurveyResponse = {};
+for (let i = 1; i <= 12; i++) initialPreSurvey[`DDI_${i}`] = 3;
+for (let i = 1; i <= 5; i++) initialPreSurvey[`SSRPH_${i}`] = 0;
+for (let i = 1; i <= 13; i++) initialPreSurvey[`AIAS_${i}`] = 3;
+for (let i = 1; i <= 3; i++) initialPreSurvey[`Mood_${i}`] = 3;
+
+const initialPostSurvey: SurveyResponse = {
+  Self_Comfort: 4,
+  Self_Depth: 4,
+  reflection: '',
+};
+for (let i = 1; i <= 12; i++) initialPostSurvey[`BFNE_${i}`] = 3;
+
+// --- DYNAMIC API URL SETUP ---
+const isLocal =
+  window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+
+// TODO: When deploy Go backend to Railway, paste the live URL here
+const API_BASE_URL = isLocal
+  ? 'http://localhost:8080'
+  : 'https://your-go-backend-railway-url.up.railway.app';
+
 function App() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [stage, setStage] = useState<StageConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [demoMode, setDemoMode] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
 
   // Onboarding State
   const [prolificId, setProlificId] = useState('');
   const [consentGiven, setConsentGiven] = useState(false);
 
-  const [preSurvey, setPreSurvey] = useState<SurveyResponse>({});
-  const [postSurvey, setPostSurvey] = useState<SurveyResponse>({});
+  const [preSurvey, setPreSurvey] = useState<SurveyResponse>(initialPreSurvey);
+  const [postSurvey, setPostSurvey] = useState<SurveyResponse>(initialPostSurvey);
 
   const buildFallbackStage = useCallback((currentState: string, condition = '1-1'): StageConfig => {
     const conditionData = experimentData.conditions[condition];
 
-    const type =
-      currentState === 'STATE_ONBOARDING'
-        ? 'onboarding'
-        : currentState === 'STATE_PRE_SURVEY' || currentState === 'STATE_POST_SURVEY'
-          ? 'survey'
-          : currentState === 'STATE_COMPLETE'
-            ? 'complete'
-            : currentState === 'STATE_INTERACTION'
-              ? 'chat'
-              : 'unknown';
+    // Define a clear, scalable mapping of state to its configuration
+    const stageConfigMap: Record<string, { type: string; title: string }> = {
+      STATE_ONBOARDING: { type: 'onboarding', title: 'Welcome to the Study' },
+      STATE_PRE_SURVEY: { type: 'survey', title: 'Pre-interaction Survey' },
+      STATE_INTERACTION: { type: 'chat', title: 'Peer Support Group Chat' },
+      STATE_POST_SURVEY: { type: 'survey', title: 'Post-interaction Survey' },
+      STATE_COMPLETE: { type: 'complete', title: 'Session Complete' },
+    };
 
-    const title =
-      currentState === 'STATE_ONBOARDING'
-        ? 'Welcome to the Study'
-        : currentState === 'STATE_PRE_SURVEY'
-          ? 'Pre-interaction Survey'
-          : currentState === 'STATE_INTERACTION'
-            ? 'Peer Support Group Chat'
-            : currentState === 'STATE_POST_SURVEY'
-              ? 'Post-interaction Survey'
-              : currentState === 'STATE_COMPLETE'
-                ? 'Session Complete'
-                : 'Unknown Stage';
+    // Extract the matched configuration, falling back to 'unknown' if it doesn't exist
+    const { type, title } = stageConfigMap[currentState] || {
+      type: 'unknown',
+      title: 'Unknown Stage',
+    };
 
     return {
       type,
@@ -85,13 +115,15 @@ function App() {
       condition,
       title,
       allScripts: conditionData?.stages ?? {},
+      completionCode: currentState === 'STATE_COMPLETE' ? 'DEMO_CODE_LOCAL' : undefined,
     };
   }, []);
 
   const initSession = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await fetch('http://localhost:8080/api/session/init', {
+      // USING DYNAMIC URL
+      const response = await fetch(`${API_BASE_URL}/api/session/init`, {
         method: 'POST',
       });
       if (!response.ok) {
@@ -105,7 +137,6 @@ function App() {
       setSessionId(`demo-${Date.now()}`);
       // Start at the new ONBOARDING state
       setStage(buildFallbackStage('STATE_ONBOARDING', condition));
-      setDemoMode(true);
       setError(null);
     } finally {
       setLoading(false);
@@ -114,14 +145,14 @@ function App() {
 
   const loadStage = async (sid: string) => {
     try {
-      const response = await fetch(`http://localhost:8080/api/stage?sessionId=${sid}`);
+      // USING DYNAMIC URL
+      const response = await fetch(`${API_BASE_URL}/api/stage?sessionId=${sid}`);
       if (!response.ok) throw new Error('Backend unavailable');
       const payload = await response.json();
       setStage(payload.nextStage ?? payload);
     } catch {
       const condition = stage?.condition ?? '1-1';
       setStage(buildFallbackStage(stage?.currentState ?? 'STATE_ONBOARDING', condition));
-      setDemoMode(true);
     }
   };
 
@@ -133,12 +164,14 @@ function App() {
     if (!sessionId) return;
 
     try {
-      const response = await fetch('http://localhost:8080/api/submit', {
+      // USING DYNAMIC URL
+      const response = await fetch(`${API_BASE_URL}/api/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId, ...payload }),
       });
       const result = await response.json();
+
       if (result.nextStage) setStage(result.nextStage);
     } catch {
       const currentState =
@@ -155,7 +188,6 @@ function App() {
       const nextState = nextStateMap[currentState] ?? 'STATE_COMPLETE';
       const currentCondition = stage?.condition ?? '1-1';
       setStage(buildFallbackStage(nextState, currentCondition));
-      setDemoMode(true);
     }
   };
 
@@ -170,7 +202,7 @@ function App() {
 
   const handlePreSurveySubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setIsConnecting(true); // Trigger 3-second Ecological Validity Delay
+    setIsConnecting(true);
 
     setTimeout(async () => {
       setIsConnecting(false);
@@ -183,17 +215,18 @@ function App() {
 
   const handlePostSurveySubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+
     await submitStage({
       currentState: 'STATE_POST_SURVEY',
       postSurveyData: postSurvey,
     });
   };
 
-  // Safe setter for MUI Slider
+  // UPDATED: Added "| string" to the value type to support the reflection text box
   const handleSliderChange = (
     surveyType: 'pre' | 'post',
     key: string,
-    value: number | number[]
+    value: number | number[] | string
   ) => {
     const val = Array.isArray(value) ? value[0] : value;
     if (surveyType === 'pre') {
@@ -249,23 +282,6 @@ function App() {
               Condition: {stage.condition}
             </Typography>
           </Box>
-          {demoMode && (
-            <Box
-              sx={{
-                px: 2,
-                py: 0.5,
-                bgcolor: 'warning.light',
-                color: 'warning.dark',
-                borderRadius: 4,
-                border: 1,
-                borderColor: 'warning.main',
-              }}
-            >
-              <Typography variant="caption" sx={{ fontWeight: 'bold' }}>
-                Demo Mode: Running Locally
-              </Typography>
-            </Box>
-          )}
         </Box>
       </Box>
 
@@ -300,7 +316,7 @@ function App() {
           {stage.type === 'chat' && (
             <Box sx={{ height: '100%' }}>
               <ChatInterface
-                conditionScripts={stage.allScripts ?? {}}
+                conditionScripts={personalizeScripts(stage.allScripts ?? {}, prolificId)}
                 onChatComplete={async (transcript, stage1Score, stage2Score) => {
                   await submitStage({
                     currentState: 'STATE_INTERACTION',
@@ -324,7 +340,7 @@ function App() {
           )}
 
           {/* COMPLETE SCREEN */}
-          {stage.type === 'complete' && <CompleteScreen />}
+          {stage.type === 'complete' && <CompleteScreen completionCode={stage.completionCode} />}
         </Container>
       </Box>
     </Box>

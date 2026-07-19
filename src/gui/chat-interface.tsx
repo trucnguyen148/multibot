@@ -26,11 +26,13 @@ interface ChatInterfaceProps {
 }
 
 export const ChatInterface = ({ conditionScripts, onChatComplete }: ChatInterfaceProps) => {
+  // TOGGLE THIS TO TRUE TO RESTORE ASSESSMENTS LATER
+  const ENABLE_ASSESSMENTS = false;
+
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isTyping, setIsTyping] = useState<boolean>(false);
   const [typingBot, setTypingBot] = useState<string | null>(null);
 
-  // Internal state machine running the stages
   const [internalStage, setInternalStage] = useState<string>('STATE_CHAT_STAGE_1');
   const [stage1Score, setStage1Score] = useState<number | null>(null);
   const [stage2Score, setStage2Score] = useState<number | null>(null);
@@ -113,21 +115,38 @@ export const ChatInterface = ({ conditionScripts, onChatComplete }: ChatInterfac
     setInputValue('');
     setAwaitingUser(false);
 
-    if (internalStage === 'STATE_CHAT_STAGE_1' || internalStage === 'STATE_CHAT_STAGE_2') {
-      const assessmentMsg: ChatMessage = {
-        id: crypto.randomUUID(),
-        sender: 'System',
-        text: 'Assessment',
-        timestamp: new Date().toISOString(),
-        stage: internalStage,
-        isAssessment: true,
-      };
-
-      setTimeout(() => {
-        setMessages((prev) => [...prev, assessmentMsg]);
-      }, 500);
+    if (internalStage === 'STATE_CHAT_STAGE_1') {
+      if (ENABLE_ASSESSMENTS) {
+        const assessmentMsg: ChatMessage = {
+          id: crypto.randomUUID(),
+          sender: 'System',
+          text: 'Assessment',
+          timestamp: new Date().toISOString(),
+          stage: internalStage,
+          isAssessment: true,
+        };
+        setTimeout(() => setMessages((prev) => [...prev, assessmentMsg]), 500);
+      } else {
+        // Skip assessment and move directly to stage 2
+        setInternalStage('STATE_CHAT_STAGE_2');
+      }
+    } else if (internalStage === 'STATE_CHAT_STAGE_2') {
+      if (ENABLE_ASSESSMENTS) {
+        const assessmentMsg: ChatMessage = {
+          id: crypto.randomUUID(),
+          sender: 'System',
+          text: 'Assessment',
+          timestamp: new Date().toISOString(),
+          stage: internalStage,
+          isAssessment: true,
+        };
+        setTimeout(() => setMessages((prev) => [...prev, assessmentMsg]), 500);
+      } else {
+        // Skip assessment and move directly to stage 3
+        setInternalStage('STATE_CHAT_STAGE_3');
+      }
     } else if (internalStage === 'STATE_CHAT_STAGE_3') {
-      setInternalStage('STATE_CLOSING'); // Lock out user input completely
+      setInternalStage('STATE_CLOSING');
 
       setIsTyping(true);
       setTypingBot('Pete');
@@ -143,12 +162,11 @@ export const ChatInterface = ({ conditionScripts, onChatComplete }: ChatInterfac
         };
         setMessages((prev) => [...prev, closingMsg]);
 
-        // Wait 2.5 seconds so the user can read Pete's message, then transition to Post-Survey
         setTimeout(() => {
           const finalTranscript = [...messages, userMsg, closingMsg];
-          onChatComplete(finalTranscript, stage1Score as number, stage2Score as number);
+          onChatComplete(finalTranscript, stage1Score || 0, stage2Score || 0);
         }, 2500);
-      }, 1500); // 1.5 seconds of Pete typing the final message
+      }, 1500);
     }
   };
 
@@ -166,7 +184,6 @@ export const ChatInterface = ({ conditionScripts, onChatComplete }: ChatInterfac
     }
   };
 
-  // Fade out effect for the entire chat component right before it transitions
   const isClosing =
     internalStage === 'STATE_CLOSING' &&
     messages.length > 0 &&
@@ -195,6 +212,7 @@ export const ChatInterface = ({ conditionScripts, onChatComplete }: ChatInterfac
             const isUser = msg.sender === 'User';
 
             if (msg.isAssessment) {
+              if (!ENABLE_ASSESSMENTS) return null;
               const isAnswered = msg.assessmentScore !== undefined;
               return (
                 <Box key={msg.id} sx={{ display: 'flex', justifyContent: 'center', my: 3 }}>
