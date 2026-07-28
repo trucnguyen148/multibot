@@ -67,22 +67,44 @@ export const PreSurvey: React.FC<PreSurveyProps> = ({
               1 = Strongly Disagree, 2 = Disagree, 3 = Neutral, 4 = Agree, 5 = Strongly Agree
             </Typography>
             <Stack spacing={3}>
-              {ddiItems.map((itemText, i) => (
-                <Box key={`ddi-${i}`}>
-                  <Typography variant="body1" sx={{ mb: 1 }}>
-                    {i + 1}. {itemText}
-                  </Typography>
-                  <Slider
-                    value={(preSurvey[`DDI_${i + 1}`] as number) || 3}
-                    min={1}
-                    max={5}
-                    step={1}
-                    marks
-                    valueLabelDisplay="auto"
-                    onChange={(_, val) => handleSliderChange('pre', `DDI_${i + 1}`, val)}
-                  />
-                </Box>
-              ))}
+              {ddiItems.map((itemText, i) => {
+                const key = `DDI_${i + 1}`;
+                const isAnswered = preSurvey[key] !== undefined;
+                return (
+                  <Box key={key}>
+                    <Typography variant="body1">
+                      {i + 1}. {itemText}
+                    </Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 3, mt: 1 }}>
+                      <Slider
+                        value={(preSurvey[key] as number) || 3}
+                        min={1}
+                        max={5}
+                        step={1}
+                        marks
+                        onChange={(_, val) => handleSliderChange('pre', key, val)}
+                        onChangeCommitted={(_, val) => handleSliderChange('pre', key, val)}
+                        sx={{
+                          color: isAnswered ? 'primary.main' : 'grey.400',
+                          '& .MuiSlider-thumb': {
+                            display: isAnswered ? 'flex' : 'none',
+                          },
+                        }}
+                      />
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          color: isAnswered ? 'success.main' : 'error.main',
+                          minWidth: '95px',
+                          fontWeight: 'bold',
+                        }}
+                      >
+                        {isAnswered ? `Score: ${preSurvey[key]}` : 'Unanswered'}
+                      </Typography>
+                    </Box>
+                  </Box>
+                );
+              })}
             </Stack>
           </Box>
           <Divider />
@@ -96,22 +118,44 @@ export const PreSurvey: React.FC<PreSurveyProps> = ({
               0 = Strongly Disagree, 3 = Strongly Agree
             </Typography>
             <Stack spacing={3}>
-              {ssrphItems.map((itemText, i) => (
-                <Box key={`ssrph-${i}`}>
-                  <Typography variant="body1" sx={{ mb: 1 }}>
-                    {i + 1}. {itemText}
-                  </Typography>
-                  <Slider
-                    value={(preSurvey[`SSRPH_${i + 1}`] as number) || 0}
-                    min={0}
-                    max={3}
-                    step={1}
-                    marks
-                    valueLabelDisplay="auto"
-                    onChange={(_, val) => handleSliderChange('pre', `SSRPH_${i + 1}`, val)}
-                  />
-                </Box>
-              ))}
+              {ssrphItems.map((itemText, i) => {
+                const key = `SSRPH_${i + 1}`;
+                const isAnswered = preSurvey[key] !== undefined;
+                return (
+                  <Box key={key}>
+                    <Typography variant="body1">
+                      {i + 1}. {itemText}
+                    </Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 3, mt: 1 }}>
+                      <Slider
+                        value={(preSurvey[key] as number) || 0}
+                        min={0}
+                        max={3}
+                        step={1}
+                        marks
+                        onChange={(_, val) => handleSliderChange('pre', key, val)}
+                        onChangeCommitted={(_, val) => handleSliderChange('pre', key, val)}
+                        sx={{
+                          color: isAnswered ? 'primary.main' : 'grey.400',
+                          '& .MuiSlider-thumb': {
+                            display: isAnswered ? 'flex' : 'none',
+                          },
+                        }}
+                      />
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          color: isAnswered ? 'success.main' : 'error.main',
+                          minWidth: '95px',
+                          fontWeight: 'bold',
+                        }}
+                      >
+                        {isAnswered ? `Score: ${preSurvey[key]}` : 'Unanswered'}
+                      </Typography>
+                    </Box>
+                  </Box>
+                );
+              })}
             </Stack>
           </Box>
           <Divider />
@@ -125,27 +169,57 @@ export const PreSurvey: React.FC<PreSurveyProps> = ({
               1 = Strongly Disagree, 2 = Disagree, 3 = Neutral, 4 = Agree, 5 = Strongly Agree
             </Typography>
             <Stack spacing={3}>
-              {aiasItems.map((itemText, i) => (
-                <Box key={`aias-${i}`}>
-                  <Typography variant="body1" sx={{ mb: 1 }}>
-                    {i + 1}. {itemText}
-                  </Typography>
-                  <Slider
-                    value={(preSurvey[`AIAS_${i + 1}`] as number) || 3}
-                    min={1}
-                    max={5}
-                    step={1}
-                    marks
-                    valueLabelDisplay="auto"
-                    onChange={(_, val) => handleSliderChange('pre', `AIAS_${i + 1}`, val)}
-                  />
-                </Box>
-              ))}
+              {aiasItems.map((itemText, i) => {
+                const key = `AIAS_${i + 1}`;
+                const isAnswered = preSurvey[key] !== undefined;
+                return (
+                  <Box key={key}>
+                    <Typography variant="body1">
+                      {i + 1}. {itemText}
+                    </Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 3, mt: 1 }}>
+                      <Slider
+                        value={(preSurvey[key] as number) || 3}
+                        min={1}
+                        max={5}
+                        step={1}
+                        marks
+                        onChange={(_, val) => handleSliderChange('pre', key, val)}
+                        onChangeCommitted={(_, val) => handleSliderChange('pre', key, val)}
+                        sx={{
+                          color: isAnswered ? 'primary.main' : 'grey.400',
+                          '& .MuiSlider-thumb': {
+                            display: isAnswered ? 'flex' : 'none',
+                          },
+                        }}
+                      />
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          color: isAnswered ? 'success.main' : 'error.main',
+                          minWidth: '95px',
+                          fontWeight: 'bold',
+                        }}
+                      >
+                        {isAnswered ? `Score: ${preSurvey[key]}` : 'Unanswered'}
+                      </Typography>
+                    </Box>
+                  </Box>
+                );
+              })}
             </Stack>
           </Box>
           <Divider />
-          <Button type="submit" variant="contained" size="large">
-            Join Chat
+
+          <Button
+            type="submit"
+            variant="contained"
+            size="large"
+            disabled={Object.keys(preSurvey).length < 21}
+          >
+            {Object.keys(preSurvey).length < 21
+              ? 'Please answer all questions'
+              : 'Submit Pre-Survey'}
           </Button>
         </Stack>
       </form>

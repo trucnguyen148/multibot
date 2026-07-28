@@ -54,19 +54,10 @@ const personalizeScripts = (
   return personalized;
 };
 
-// Generate initial states so we never send empty data
 const initialPreSurvey: SurveyResponse = {};
-for (let i = 1; i <= 12; i++) initialPreSurvey[`DDI_${i}`] = 3;
-for (let i = 1; i <= 5; i++) initialPreSurvey[`SSRPH_${i}`] = 0;
-for (let i = 1; i <= 13; i++) initialPreSurvey[`AIAS_${i}`] = 3;
-for (let i = 1; i <= 3; i++) initialPreSurvey[`Mood_${i}`] = 3;
-
 const initialPostSurvey: SurveyResponse = {
-  Self_Comfort: 4,
-  Self_Depth: 4,
   reflection: '',
 };
-for (let i = 1; i <= 12; i++) initialPostSurvey[`BFNE_${i}`] = 3;
 
 // --- DYNAMIC API URL SETUP ---
 const isLocal =
@@ -210,7 +201,7 @@ function App() {
         currentState: 'STATE_PRE_SURVEY',
         preSurveyData: preSurvey,
       });
-    }, 3000);
+    }, 1500);
   };
 
   const handlePostSurveySubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -316,6 +307,7 @@ function App() {
           {stage.type === 'chat' && (
             <Box sx={{ height: '100%' }}>
               <ChatInterface
+                userName={prolificId}
                 conditionScripts={personalizeScripts(stage.allScripts ?? {}, prolificId)}
                 onChatComplete={async (transcript, stage1Score, stage2Score) => {
                   await submitStage({

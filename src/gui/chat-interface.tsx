@@ -21,11 +21,16 @@ interface ChatMessage {
 }
 
 interface ChatInterfaceProps {
+  userName: string;
   conditionScripts: Record<string, BotScript[]>;
   onChatComplete: (transcript: ChatMessage[], stage1Score: number, stage2Score: number) => void;
 }
 
-export const ChatInterface = ({ conditionScripts, onChatComplete }: ChatInterfaceProps) => {
+export const ChatInterface = ({
+  userName,
+  conditionScripts,
+  onChatComplete,
+}: ChatInterfaceProps) => {
   // TOGGLE THIS TO TRUE TO RESTORE ASSESSMENTS LATER
   const ENABLE_ASSESSMENTS = false;
 
@@ -105,7 +110,7 @@ export const ChatInterface = ({ conditionScripts, onChatComplete }: ChatInterfac
 
     const userMsg: ChatMessage = {
       id: crypto.randomUUID(),
-      sender: 'User',
+      sender: userName || 'You',
       text: inputValue.trim(),
       timestamp: new Date().toISOString(),
       stage: internalStage,
@@ -149,13 +154,13 @@ export const ChatInterface = ({ conditionScripts, onChatComplete }: ChatInterfac
       setInternalStage('STATE_CLOSING');
 
       setIsTyping(true);
-      setTypingBot('Pete');
+      setTypingBot('Vieno');
 
       setTimeout(() => {
         setIsTyping(false);
         const closingMsg: ChatMessage = {
           id: crypto.randomUUID(),
-          sender: 'Pete',
+          sender: 'Vieno',
           text: 'Thanks so much for sharing that. This concludes our session today!',
           timestamp: new Date().toISOString(),
           stage: 'STATE_CLOSING',
@@ -187,7 +192,7 @@ export const ChatInterface = ({ conditionScripts, onChatComplete }: ChatInterfac
   const isClosing =
     internalStage === 'STATE_CLOSING' &&
     messages.length > 0 &&
-    messages[messages.length - 1].sender === 'Pete';
+    messages[messages.length - 1].sender === 'Vieno';
 
   return (
     <Fade in={!isClosing} timeout={1000}>
@@ -196,8 +201,8 @@ export const ChatInterface = ({ conditionScripts, onChatComplete }: ChatInterfac
         sx={{
           display: 'flex',
           flexDirection: 'column',
-          height: '600px',
-          maxWidth: '800px',
+          height: '80vh',
+          maxWidth: '100vh',
           margin: '0 auto',
           overflow: 'hidden',
           borderRadius: 2,
@@ -209,7 +214,7 @@ export const ChatInterface = ({ conditionScripts, onChatComplete }: ChatInterfac
 
         <Box sx={{ flexGrow: 1, overflowY: 'auto', p: 3, bgcolor: '#f8f9fa' }}>
           {messages.map((msg) => {
-            const isUser = msg.sender === 'User';
+            const isUser = msg.sender === userName || msg.sender === 'You';
 
             if (msg.isAssessment) {
               if (!ENABLE_ASSESSMENTS) return null;

@@ -239,22 +239,26 @@ func (app *App) stageHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *App) submitHandler(w http.ResponseWriter, r *http.Request) {
+	// 1. Define the complete payload struct to catch all possible incoming data
 	var payload struct {
-		SessionID      string         `json:"sessionId"`
-		CurrentState   string         `json:"currentState"`
-		ProlificID     string         `json:"prolificId"`
-		PreSurveyData  map[string]any `json:"preSurveyData"`
-		UserMessage    map[string]any `json:"userMessage"`
-		Score          *int           `json:"score"`
-		PostSurveyData map[string]any `json:"postSurveyData"`
+		SessionID          string         `json:"sessionId"`
+		CurrentState       string         `json:"currentState"`
+		ProlificID         string         `json:"prolificId"` // From Onboarding
+		PreSurveyData      map[string]any `json:"preSurveyData"`
+		ChatTranscript     []any          `json:"chatTranscript"` // Array of chat messages
+		Stage1ComfortScore int            `json:"stage1ComfortScore"`
+		Stage2ComfortScore int            `json:"stage2ComfortScore"`
+		PostSurveyData     map[string]any `json:"postSurveyData"`
 	}
 
+	// Decode incoming JSON
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		app.logger.Error("invalid request body", "error", err)
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
+	// Load existing session from SQLite
 	session, err := loadSession(app.db, payload.SessionID)
 	if err != nil {
 		app.logger.Warn("session not found for submission", "sessionId", payload.SessionID)
@@ -262,7 +266,9 @@ func (app *App) submitHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	switch SessionState(payload.CurrentState) {
+	// 2. Process data and advance the state machine
+	switch payload.CurrentState {
+	
 	case "STATE_ONBOARDING":
 		if payload.ProlificID != "" {
 			initialData := map[string]any{
@@ -271,14 +277,14 @@ func (app *App) submitHandler(w http.ResponseWriter, r *http.Request) {
 			data, _ := json.Marshal(initialData)
 			session.PreSurveyData = data
 		}
-		session.CurrentState = StatePreSurvey
+		session.CurrentState = "STATE_PRE_SURVEY"
 
-	case StatePreSurvey:
+	case "STATE_PRE_SURVEY": // Or your StatePreSurvey constant
 		if payload.PreSurveyData != nil {
-			if reversed := reverseAIAS(payload.PreSurveyData); reversed != nil {
-				payload.PreSurveyData = reversed
-			}
+			// Reverse AIAS "Risks" factor. (Items 10, 11, 12, 13)
+			reverseScoreMap(payload.PreSurveyData, "AIAS", []int{10, 11, 12, 13}, 5.0)
 			
+			// Extract and preserve the existing prolific_id 
 			var existingData map[string]any
 			if len(session.PreSurveyData) > 0 {
 				json.Unmarshal(session.PreSurveyData, &existingData)
@@ -290,51 +296,47 @@ func (app *App) submitHandler(w http.ResponseWriter, r *http.Request) {
 			data, _ := json.Marshal(payload.PreSurveyData)
 			session.PreSurveyData = data
 		}
-		session.CurrentState = StateChatStage1
-	case StateChatStage1:
-		if payload.UserMessage != nil {
-			session.ChatTranscript = append(session.ChatTranscript, buildChatMessage(payload.UserMessage, session.CurrentState))
+		session.CurrentState = "STATE_INTERACTION"
+
+	case "STATE_INTERACTION":
+		// Handle the full chat transcript dump from the frontend
+		if payload.ChatTranscript != nil {
+			data, _ := json.Marshal(payload.ChatTranscript)
+			session.ChatTranscript = data // Assuming ChatTranscript is []byte in your Session struct
 		}
-		session.CurrentState = StateAssessment1
-	case StateAssessment1:
-		if payload.Score != nil {
-			session.Stage1ComfortScore = payload.Score
-		}
-		session.CurrentState = StateChatStage2
-	case StateChatStage2:
-		if payload.UserMessage != nil {
-			session.ChatTranscript = append(session.ChatTranscript, buildChatMessage(payload.UserMessage, session.CurrentState))
-		}
-		session.CurrentState = StateAssessment2
-	case StateAssessment2:
-		if payload.Score != nil {
-			session.Stage2ComfortScore = payload.Score
-		}
-		session.CurrentState = StateChatStage3
-	case StateChatStage3:
-		if payload.UserMessage != nil {
-			session.ChatTranscript = append(session.ChatTranscript, buildChatMessage(payload.UserMessage, session.CurrentState))
-		}
-		session.CurrentState = StatePostSurvey
-	case StatePostSurvey:
+		// Save the mid-chat assessment scores
+		session.Stage1ComfortScore = payload.Stage1ComfortScore
+		session.Stage2ComfortScore = payload.Stage2ComfortScore
+		
+		session.CurrentState = "STATE_POST_SURVEY"
+
+	case "STATE_POST_SURVEY":
 		if payload.PostSurveyData != nil {
+			// Reverse BFNE items 2, 4, 7, and 10
+			reverseScoreMap(payload.PostSurveyData, "BFNE", []int{2, 4, 7, 10}, 5.0)
+
 			data, _ := json.Marshal(payload.PostSurveyData)
 			session.PostSurveyData = data
 		}
-		session.CurrentState = StateComplete
+		session.CurrentState = "STATE_COMPLETE"
 	}
 
+	// 3. Save updated session to SQLite
 	if err := saveSession(app.db, session); err != nil {
-		app.logger.Error("failed to update session state", "error", err, "sessionId", session.UserID)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		app.logger.Error("failed to save session", "error", err)
+		http.Error(w, "Failed to save session", http.StatusInternalServerError)
 		return
 	}
 
-	writeJSON(w, map[string]any{
-		"sessionId":    session.UserID,
+	// 4. Build and return the next stage configuration (Injects the Prolific Code if complete)
+	nextStage := buildStageResponse(session) // Using your existing response builder
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"sessionId":    session.ID,
 		"currentState": session.CurrentState,
-		"nextStage":    app.buildStageResponse(session),
-	}, app.logger)
+		"nextStage":    nextStage,
+	})
 }
 
 func (app *App) exportHandler(w http.ResponseWriter, r *http.Request) {
@@ -583,5 +585,20 @@ func stageTitle(state SessionState) string {
 		return "Stage 3 – Late vulnerability"
 	default:
 		return "Chat"
+	}
+}
+
+// reverseScoreMap finds specific keys in the JSON map and applies standard Likert reverse-scoring.
+// Formula used: (MaxScore + 1) - CurrentScore
+func reverseScoreMap(data map[string]any, prefix string, keysToReverse []int, maxScore float64) {
+	if data == nil {
+		return
+	}
+	for _, keyNum := range keysToReverse {
+		key := fmt.Sprintf("%s_%d", prefix, keyNum)
+		// Go unmarshals JSON numbers as float64
+		if val, ok := data[key].(float64); ok {
+			data[key] = (maxScore + 1.0) - val
+		}
 	}
 }
