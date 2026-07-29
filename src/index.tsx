@@ -63,10 +63,7 @@ const initialPostSurvey: SurveyResponse = {
 const isLocal =
   window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
-// TODO: When deploy Go backend to Railway, paste the live URL here
-const API_BASE_URL = isLocal
-  ? 'http://localhost:8080'
-  : 'https://your-go-backend-railway-url.up.railway.app';
+const API_BASE_URL = isLocal ? 'http://localhost:8080' : process.env.REACT_APP_BACKEND_URL;
 
 function App() {
   const [sessionId, setSessionId] = useState<string | null>(null);
