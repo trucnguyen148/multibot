@@ -72,7 +72,6 @@ export const OnBoarding: React.FC<OnBoardingProps> = ({
               required
             />
           </Box>
-
           <Box>
             <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 'bold' }}>
               2. Your name in the chat

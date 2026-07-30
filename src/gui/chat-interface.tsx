@@ -60,13 +60,15 @@ export const ChatInterface = ({
   }, [messages, isTyping]);
 
   useEffect(() => {
-    if (stageStartedRef.current[internalStage]) return;
+    const stageKey = internalStage;
+    if (stageStartedRef.current[stageKey]) return;
 
-    const scriptsToPlay = conditionScripts[internalStage];
+    const scriptsToPlay = conditionScripts[stageKey];
     if (!scriptsToPlay || scriptsToPlay.length === 0) return;
 
+    const startedStages = stageStartedRef.current;
     let isCancelled = false;
-    stageStartedRef.current[internalStage] = true;
+    startedStages[stageKey] = true;
 
     const playBotScripts = async () => {
       for (const script of scriptsToPlay) {
@@ -90,7 +92,7 @@ export const ChatInterface = ({
             sender: script.sender,
             text: script.text,
             timestamp: new Date().toISOString(),
-            stage: internalStage,
+            stage: stageKey,
           },
         ]);
       }
@@ -104,7 +106,7 @@ export const ChatInterface = ({
 
     return () => {
       isCancelled = true;
-      stageStartedRef.current[internalStage] = false;
+      startedStages[stageKey] = false;
     };
   }, [conditionScripts, internalStage]);
 
@@ -194,9 +196,7 @@ export const ChatInterface = ({
   };
 
   const isClosing =
-    internalStage === 'STATE_CLOSING' &&
-    messages.length > 0 &&
-    messages[messages.length - 1].sender === 'Vieno';
+    internalStage === 'STATE_CLOSING' && messages.length > 0 && messages.at(-1)?.sender === 'Vieno';
 
   return (
     <Fade in={!isClosing} timeout={1000}>

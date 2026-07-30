@@ -89,6 +89,11 @@ type App struct {
 	logger     *slog.Logger
 }
 
+const (
+	targetUsersPerCondition = 60
+	maximumUsers             = 180
+)
+
 // --- Main Entry Point ---
 
 func main() {
@@ -209,7 +214,13 @@ func (app *App) healthHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *App) createSessionHandler(w http.ResponseWriter, r *http.Request) {
-	condition := app.randomCondition()
+	condition, err := app.randomCondition()
+	if err != nil {
+		app.logger.Warn("condition assignment quota reached", "error", err)
+		http.Error(w, "Condition allocation is full", http.StatusConflict)
+		return
+	}
+
 	session := &Session{
 		UserID:       fmt.Sprintf("sess-%d", time.Now().UnixNano()),
 		Condition:    condition,
@@ -292,11 +303,10 @@ func (app *App) submitHandler(w http.ResponseWriter, r *http.Request) {
 
 	case "STATE_PRE_SURVEY": // Or your StatePreSurvey constant
 		if payload.PreSurveyData != nil {
-			// Reverse AIAS "Risks" factor. (Items 10, 11, 12, 13)
-			reverseScoreMap(payload.PreSurveyData, "AIAS", []int{10, 11, 12, 13}, 5.0)
-			
-			// Carry over the identifiers written at onboarding, which would
-			// otherwise be lost when this payload replaces PreSurveyData.
+			// Preserve raw responses exactly as submitted and add prolific_id if it exists.
+			payload.PreSurveyData = sanitizeSurveyData(payload.PreSurveyData)
+
+			// Extract and preserve the existing prolific_id
 			var existingData map[string]any
 			if len(session.PreSurveyData) > 0 {
 				json.Unmarshal(session.PreSurveyData, &existingData)
@@ -315,19 +325,22 @@ func (app *App) submitHandler(w http.ResponseWriter, r *http.Request) {
 	case "STATE_INTERACTION":
 		// Handle the full chat transcript dump from the frontend
 		if payload.ChatTranscript != nil {
-			session.ChatTranscript = payload.ChatTranscript
+			data, _ := json.Marshal(payload.ChatTranscript)
+			var transcript []ChatMessage
+			if err := json.Unmarshal(data, &transcript); err == nil {
+				session.ChatTranscript = transcript
+			}
 		}
 		// Save the mid-chat assessment scores. These stay nil when the
 		// between-stage assessments are disabled in chat-interface.tsx.
 		session.Stage1ComfortScore = payload.Stage1ComfortScore
 		session.Stage2ComfortScore = payload.Stage2ComfortScore
 
-		session.CurrentState = StatePostSurvey
+		session.CurrentState = "STATE_POST_SURVEY"
 
 	case "STATE_POST_SURVEY":
 		if payload.PostSurveyData != nil {
-			// Reverse BFNE items 2, 4, 7, and 10
-			reverseScoreMap(payload.PostSurveyData, "BFNE", []int{2, 4, 7, 10}, 5.0)
+			payload.PostSurveyData = sanitizeSurveyData(payload.PostSurveyData)
 
 			data, _ := json.Marshal(payload.PostSurveyData)
 			session.PostSurveyData = data
@@ -415,11 +428,61 @@ func (app *App) exportHandler(w http.ResponseWriter, r *http.Request) {
 
 // --- Helpers ---
 
-func (app *App) randomCondition() string {
+func (app *App) randomCondition() (string, error) {
 	if len(app.conditions) == 0 {
-		return "1-1" // Fallback safety
+		return "1-1", nil
 	}
-	return app.conditions[rand.Intn(len(app.conditions))]
+
+	rows, err := app.db.Query(`SELECT condition FROM sessions`)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+
+	counts := make(map[string]int, len(app.conditions))
+	for _, condition := range app.conditions {
+		counts[condition] = 0
+	}
+
+	for rows.Next() {
+		var condition string
+		if err := rows.Scan(&condition); err != nil {
+			return "", err
+		}
+		if _, ok := counts[condition]; ok {
+			counts[condition]++
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return "", err
+	}
+
+	return app.selectCondition(counts)
+}
+
+func (app *App) selectCondition(counts map[string]int) (string, error) {
+	if len(app.conditions) == 0 {
+		return "", fmt.Errorf("no conditions configured")
+	}
+
+	minCount := maximumUsers
+	candidates := make([]string, 0, len(app.conditions))
+	for _, condition := range app.conditions {
+		count := counts[condition]
+		switch {
+		case count < minCount:
+			minCount = count
+			candidates = []string{condition}
+		case count == minCount:
+			candidates = append(candidates, condition)
+		}
+	}
+
+	if minCount >= targetUsersPerCondition {
+		return "", fmt.Errorf("condition allocation is full")
+	}
+
+	return candidates[rand.Intn(len(candidates))], nil
 }
 
 func (app *App) buildStageResponse(session *Session) StageConfig {
@@ -428,7 +491,7 @@ func (app *App) buildStageResponse(session *Session) StageConfig {
 		Condition:    session.Condition,
 	}
 
-	switch session.CurrentState {
+	switch SessionState(session.CurrentState) {
 	case StateOnboarding:
 		response.Type = "onboarding"
 		response.Title = "Welcome to the Study"
@@ -555,17 +618,91 @@ func getEnvOrDefault(key, fallback string) string {
 	return fallback
 }
 
-// reverseScoreMap finds specific keys in the JSON map and applies standard Likert reverse-scoring.
-// Formula used: (MaxScore + 1) - CurrentScore
-func reverseScoreMap(data map[string]any, prefix string, keysToReverse []int, maxScore float64) {
+type surveyScaleSpec struct {
+	prefix       string
+	reverseItems []int
+	maxScore     float64
+}
+
+func sanitizeSurveyData(data map[string]any) map[string]any {
 	if data == nil {
-		return
+		return nil
 	}
-	for _, keyNum := range keysToReverse {
-		key := fmt.Sprintf("%s_%d", prefix, keyNum)
-		// Go unmarshals JSON numbers as float64
-		if val, ok := data[key].(float64); ok {
-			data[key] = (maxScore + 1.0) - val
-		}
+
+	cleanData := make(map[string]any, len(data))
+	for key, value := range data {
+		cleanData[key] = value
+	}
+	return cleanData
+}
+
+func getNumericValue(value any) (float64, bool) {
+	switch typedValue := value.(type) {
+	case float64:
+		return typedValue, true
+	case float32:
+		return float64(typedValue), true
+	case int:
+		return float64(typedValue), true
+	case int32:
+		return float64(typedValue), true
+	case int64:
+		return float64(typedValue), true
+	default:
+		return 0, false
 	}
 }
+
+func reverseScoreValue(value, maxScore float64) float64 {
+	return (maxScore + 1.0) - value
+}
+
+func buildReverseScoredAnalysis(data map[string]any, specs []surveyScaleSpec) map[string]any {
+	if data == nil {
+		return nil
+	}
+
+	analysis := make(map[string]any)
+	for _, spec := range specs {
+		reverseValues := make(map[string]any)
+		for _, item := range spec.reverseItems {
+			key := fmt.Sprintf("%s_%d", spec.prefix, item)
+			if numericValue, ok := getNumericValue(data[key]); ok {
+				reverseValues[key] = reverseScoreValue(numericValue, spec.maxScore)
+			}
+		}
+		if len(reverseValues) > 0 {
+			analysis[spec.prefix] = map[string]any{
+				"reverse_scored": reverseValues,
+			}
+		}
+	}
+
+	if len(analysis) == 0 {
+		return nil
+	}
+	return analysis
+}
+
+func assessmentTitle(state SessionState) string {
+	switch state {
+	case StateAssessment1, StateAssessment2:
+		return "Between-stage assessment"
+	default:
+		return "Assessment"
+	}
+}
+
+func stageTitle(state SessionState) string {
+	switch state {
+	case StateChatStage1:
+		return "Stage 1 – Early baseline"
+	case StateChatStage2:
+		return "Stage 2 – Mid vulnerability"
+	case StateChatStage3:
+		return "Stage 3 – Late vulnerability"
+	default:
+		return "Chat"
+	}
+}
+

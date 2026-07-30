@@ -9,9 +9,10 @@ export interface StageConfig {
   condition: string;
   title: string;
   allScripts?: Record<string, BotScript[]>;
+  completionCode?: string;
 }
 
-interface SurveyResponse {
+export interface SurveyResponse {
   [key: string]: string | number;
 }
 

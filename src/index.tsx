@@ -7,34 +7,7 @@ import { PreSurvey } from './gui/pre-survey';
 import { OnBoarding } from './gui/onboarding';
 import { PostSurvey } from './gui/post-survey';
 import { CompleteScreen } from './gui/complete-screen';
-
-interface BotScript {
-  sender: string;
-  text: string;
-}
-
-interface StageConfig {
-  type: string;
-  currentState: string;
-  condition: string;
-  title: string;
-  allScripts?: Record<string, BotScript[]>;
-  completionCode?: string;
-}
-
-interface SurveyResponse {
-  [key: string]: string | number;
-}
-
-interface ExperimentData {
-  conditions: Record<
-    string,
-    {
-      label: string;
-      stages: Record<string, BotScript[]>;
-    }
-  >;
-}
+import { BotScript, ExperimentData, StageConfig, SurveyResponse } from './utils';
 
 const experimentData = fallbackExperimentData as ExperimentData;
 
@@ -121,10 +94,23 @@ function App() {
     };
   }, []);
 
+  const loadStage = useCallback(
+    async (sid: string) => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/stage?sessionId=${sid}`);
+        if (!response.ok) throw new Error('Backend unavailable');
+        const payload = await response.json();
+        setStage(payload.nextStage ?? payload);
+      } catch {
+        setStage(buildFallbackStage('STATE_ONBOARDING', '1-1'));
+      }
+    },
+    [buildFallbackStage]
+  );
+
   const initSession = useCallback(async () => {
     setLoading(true);
     try {
-      // USING DYNAMIC URL
       const response = await fetch(`${API_BASE_URL}/api/session/init`, {
         method: 'POST',
       });
@@ -132,45 +118,48 @@ function App() {
         throw new Error('Backend unavailable');
       }
       const payload = await response.json();
-      setSessionId(payload.user_id ?? payload.sessionId ?? null);
-      await loadStage(payload.user_id ?? payload.sessionId ?? '');
+      const nextSessionId = payload.user_id ?? payload.sessionId ?? null;
+      setSessionId(nextSessionId);
+      await loadStage(nextSessionId ?? '');
     } catch {
       const condition = ['1-1', '2-1', '3-1'][Math.floor(Math.random() * 3)];
       setSessionId(`demo-${Date.now()}`);
-      // Start at the new ONBOARDING state
       setStage(buildFallbackStage('STATE_ONBOARDING', condition));
       setError(null);
     } finally {
       setLoading(false);
     }
-  }, [buildFallbackStage]);
-
-  const loadStage = async (sid: string) => {
-    try {
-      // USING DYNAMIC URL
-      const response = await fetch(`${API_BASE_URL}/api/stage?sessionId=${sid}`);
-      if (!response.ok) throw new Error('Backend unavailable');
-      const payload = await response.json();
-      setStage(payload.nextStage ?? payload);
-    } catch {
-      const condition = stage?.condition ?? '1-1';
-      setStage(buildFallbackStage(stage?.currentState ?? 'STATE_ONBOARDING', condition));
-    }
-  };
+  }, [buildFallbackStage, loadStage]);
 
   useEffect(() => {
     initSession();
   }, [initSession]);
 
   const submitStage = async (payload: Record<string, unknown>) => {
-    if (!sessionId) return;
+    const currentState =
+      (payload.currentState as string) ?? stage?.currentState ?? 'STATE_ONBOARDING';
+    const currentCondition = stage?.condition ?? '1-1';
+    const nextStateMap: Record<string, string> = {
+      STATE_ONBOARDING: 'STATE_PRE_SURVEY',
+      STATE_PRE_SURVEY: 'STATE_INTERACTION',
+      STATE_INTERACTION: 'STATE_POST_SURVEY',
+      STATE_POST_SURVEY: 'STATE_COMPLETE',
+    };
+    const nextState = nextStateMap[currentState] ?? 'STATE_COMPLETE';
+    const fallbackStage = buildFallbackStage(nextState, currentCondition);
+
+    const effectiveSessionId = sessionId ?? `demo-${Date.now()}`;
+    if (!sessionId) {
+      setSessionId(effectiveSessionId);
+    }
+
+    setStage(fallbackStage);
 
     try {
-      // USING DYNAMIC URL
       const response = await fetch(`${API_BASE_URL}/api/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId, ...payload }),
+        body: JSON.stringify({ sessionId: effectiveSessionId, ...payload }),
       });
       if (!response.ok) throw new Error('Backend unavailable');
       const result = await response.json();
@@ -180,20 +169,7 @@ function App() {
       if (!result.nextStage) throw new Error('Response missing nextStage');
       setStage(result.nextStage);
     } catch {
-      const currentState =
-        (payload.currentState as string) ?? stage?.currentState ?? 'STATE_ONBOARDING';
-
-      // Updated routing map to include Onboarding
-      const nextStateMap: Record<string, string> = {
-        STATE_ONBOARDING: 'STATE_PRE_SURVEY',
-        STATE_PRE_SURVEY: 'STATE_INTERACTION',
-        STATE_INTERACTION: 'STATE_POST_SURVEY',
-        STATE_POST_SURVEY: 'STATE_COMPLETE',
-      };
-
-      const nextState = nextStateMap[currentState] ?? 'STATE_COMPLETE';
-      const currentCondition = stage?.condition ?? '1-1';
-      setStage(buildFallbackStage(nextState, currentCondition));
+      setStage(fallbackStage);
     }
   };
 
