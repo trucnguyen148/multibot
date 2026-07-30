@@ -23,9 +23,6 @@ import (
 
 type SessionState string
 
-// Session states. These mirror the coarse states the frontend drives in
-// src/index.tsx. The chat is one server-visible step (StateInteraction); the
-// three chat stages run client-side inside that step.
 const (
 	StateOnboarding  SessionState = "STATE_ONBOARDING"
 	StatePreSurvey   SessionState = "STATE_PRE_SURVEY"
@@ -62,9 +59,6 @@ type BotScript struct {
 	Text   string `json:"text"`
 }
 
-// StageConfig is the shape src/index.tsx expects back from /api/stage and as
-// the nextStage field of /api/submit. AllScripts carries every chat stage for
-// the assigned condition at once, because the frontend plays them locally.
 type StageConfig struct {
 	Type           string                 `json:"type"`
 	CurrentState   string                 `json:"currentState"`
@@ -81,7 +75,6 @@ type experimentData struct {
 	} `json:"conditions"`
 }
 
-// App encapsulates our dependencies (Dependency Injection)
 type App struct {
 	db         *sql.DB
 	data       experimentData
@@ -91,13 +84,12 @@ type App struct {
 
 const (
 	targetUsersPerCondition = 60
-	maximumUsers             = 180
+	maximumUsers            = 180
 )
 
 // --- Main Entry Point ---
 
 func main() {
-	// 1. Initialize Structured Logging
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 
@@ -107,12 +99,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 2. Load Environment Variables
 	port := getEnvOrDefault("PORT", "8080")
 	dataDir := getEnvOrDefault("DATA_DIR", root)
-	allowedOrigin := getEnvOrDefault("ALLOWED_ORIGIN", "*") // Default to * for dev, restrict in Railway
+	allowedOrigin := getEnvOrDefault("ALLOWED_ORIGIN", "*")
 
-	// 3. Load Script Data dynamically
 	dataPath := filepath.Join(root, "data.json")
 	content, err := os.ReadFile(dataPath)
 	if err != nil {
@@ -126,13 +116,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Dynamically extract conditions (No magic strings)
 	var conditions []string
 	for k := range appData.Conditions {
 		conditions = append(conditions, k)
 	}
 
-	// 4. Initialize Database
 	dbPath := filepath.Join(dataDir, "sessions.db")
 	db, err := initDB(dbPath)
 	if err != nil {
@@ -141,7 +129,6 @@ func main() {
 	}
 	defer db.Close()
 
-	// 5. Construct the App instance
 	app := &App{
 		db:         db,
 		data:       appData,
@@ -149,7 +136,6 @@ func main() {
 		logger:     logger,
 	}
 
-	// 6. Setup Router
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", app.healthHandler)
 	mux.HandleFunc("/api/session/init", app.createSessionHandler)
@@ -157,13 +143,11 @@ func main() {
 	mux.HandleFunc("/api/submit", app.submitHandler)
 	mux.HandleFunc("/api/export", app.exportHandler)
 
-	// 7. Configure Server with Graceful Shutdown
 	srv := &http.Server{
 		Addr:    ":" + port,
 		Handler: app.withCORS(mux, allowedOrigin),
 	}
 
-	// Start server in a goroutine
 	go func() {
 		app.logger.Info("server starting", "port", port, "env", "production")
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -172,21 +156,17 @@ func main() {
 		}
 	}()
 
-	// Wait for interrupt signal for graceful shutdown
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
 	<-quit
 
 	app.logger.Info("shutting down server gracefully...")
-
-	// Give outstanding requests a deadline to finish
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	if err := srv.Shutdown(ctx); err != nil {
 		app.logger.Error("server forced to shutdown", "error", err)
 	}
-
 	app.logger.Info("server exited safely")
 }
 
@@ -206,7 +186,7 @@ func (app *App) withCORS(next http.Handler, allowedOrigin string) http.Handler {
 	})
 }
 
-// --- Handlers (Methods on App) ---
+// --- Handlers ---
 
 func (app *App) healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
@@ -255,12 +235,11 @@ func (app *App) stageHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *App) submitHandler(w http.ResponseWriter, r *http.Request) {
-	// 1. Define the complete payload struct to catch all possible incoming data
 	var payload struct {
 		SessionID          string         `json:"sessionId"`
 		CurrentState       string         `json:"currentState"`
-		ProlificID         string         `json:"prolificId"`  // From Onboarding
-		DisplayName        string         `json:"displayName"` // Chat name chosen at onboarding
+		ProlificID         string         `json:"prolificId"`
+		DisplayName        string         `json:"displayName"`
 		PreSurveyData      map[string]any `json:"preSurveyData"`
 		ChatTranscript     []ChatMessage  `json:"chatTranscript"`
 		Stage1ComfortScore *int           `json:"stage1ComfortScore"`
@@ -268,14 +247,12 @@ func (app *App) submitHandler(w http.ResponseWriter, r *http.Request) {
 		PostSurveyData     map[string]any `json:"postSurveyData"`
 	}
 
-	// Decode incoming JSON
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		app.logger.Error("invalid request body", "error", err)
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	// Load existing session from SQLite
 	session, err := loadSession(app.db, payload.SessionID)
 	if err != nil {
 		app.logger.Warn("session not found for submission", "sessionId", payload.SessionID)
@@ -283,16 +260,10 @@ func (app *App) submitHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 2. Process data and advance the state machine
 	switch payload.CurrentState {
-	
 	case "STATE_ONBOARDING":
 		if payload.ProlificID != "" {
-			initialData := map[string]any{
-				"prolific_id": payload.ProlificID,
-			}
-			// Self-chosen chat name. Participants are told a nickname is fine,
-			// but treat it as personal data since some will use a real name.
+			initialData := map[string]any{"prolific_id": payload.ProlificID}
 			if payload.DisplayName != "" {
 				initialData["display_name"] = payload.DisplayName
 			}
@@ -301,12 +272,9 @@ func (app *App) submitHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		session.CurrentState = StatePreSurvey
 
-	case "STATE_PRE_SURVEY": // Or your StatePreSurvey constant
+	case "STATE_PRE_SURVEY":
 		if payload.PreSurveyData != nil {
-			// Preserve raw responses exactly as submitted and add prolific_id if it exists.
 			payload.PreSurveyData = sanitizeSurveyData(payload.PreSurveyData)
-
-			// Extract and preserve the existing prolific_id
 			var existingData map[string]any
 			if len(session.PreSurveyData) > 0 {
 				json.Unmarshal(session.PreSurveyData, &existingData)
@@ -316,14 +284,12 @@ func (app *App) submitHandler(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 			}
-
 			data, _ := json.Marshal(payload.PreSurveyData)
 			session.PreSurveyData = data
 		}
 		session.CurrentState = StateInteraction
 
 	case "STATE_INTERACTION":
-		// Handle the full chat transcript dump from the frontend
 		if payload.ChatTranscript != nil {
 			data, _ := json.Marshal(payload.ChatTranscript)
 			var transcript []ChatMessage
@@ -331,37 +297,29 @@ func (app *App) submitHandler(w http.ResponseWriter, r *http.Request) {
 				session.ChatTranscript = transcript
 			}
 		}
-		// Save the mid-chat assessment scores. These stay nil when the
-		// between-stage assessments are disabled in chat-interface.tsx.
 		session.Stage1ComfortScore = payload.Stage1ComfortScore
 		session.Stage2ComfortScore = payload.Stage2ComfortScore
-
 		session.CurrentState = "STATE_POST_SURVEY"
 
 	case "STATE_POST_SURVEY":
 		if payload.PostSurveyData != nil {
 			payload.PostSurveyData = sanitizeSurveyData(payload.PostSurveyData)
-
 			data, _ := json.Marshal(payload.PostSurveyData)
 			session.PostSurveyData = data
 		}
 		session.CurrentState = StateComplete
 
 	default:
-		app.logger.Warn("submit for unrecognized state",
-			"sessionId", payload.SessionID, "state", payload.CurrentState)
+		app.logger.Warn("submit for unrecognized state", "sessionId", payload.SessionID, "state", payload.CurrentState)
 	}
 
-	// 3. Save updated session to SQLite
 	if err := saveSession(app.db, session); err != nil {
 		app.logger.Error("failed to save session", "error", err)
 		http.Error(w, "Failed to save session", http.StatusInternalServerError)
 		return
 	}
 
-	// 4. Build and return the next stage configuration (Injects the Prolific Code if complete)
 	nextStage := app.buildStageResponse(session)
-
 	writeJSON(w, map[string]any{
 		"sessionId":    session.UserID,
 		"currentState": session.CurrentState,
@@ -395,7 +353,6 @@ func (app *App) exportHandler(w http.ResponseWriter, r *http.Request) {
 		if err := rows.Scan(&s.UserID, &s.Condition, &s.CurrentState, &pre, &chat, &s1, &s2, &post, &created); err != nil {
 			continue
 		}
-
 		if pre != "" {
 			s.PreSurveyData = []byte(pre)
 		}
@@ -416,7 +373,6 @@ func (app *App) exportHandler(w http.ResponseWriter, r *http.Request) {
 		if parsed, err := time.Parse(time.RFC3339Nano, created); err == nil {
 			s.CreatedAt = parsed
 		}
-
 		sessions = append(sessions, s)
 	}
 
@@ -432,7 +388,6 @@ func (app *App) randomCondition() (string, error) {
 	if len(app.conditions) == 0 {
 		return "1-1", nil
 	}
-
 	rows, err := app.db.Query(`SELECT condition FROM sessions`)
 	if err != nil {
 		return "", err
@@ -464,7 +419,6 @@ func (app *App) selectCondition(counts map[string]int) (string, error) {
 	if len(app.conditions) == 0 {
 		return "", fmt.Errorf("no conditions configured")
 	}
-
 	minCount := maximumUsers
 	candidates := make([]string, 0, len(app.conditions))
 	for _, condition := range app.conditions {
@@ -477,11 +431,9 @@ func (app *App) selectCondition(counts map[string]int) (string, error) {
 			candidates = append(candidates, condition)
 		}
 	}
-
 	if minCount >= targetUsersPerCondition {
 		return "", fmt.Errorf("condition allocation is full")
 	}
-
 	return candidates[rand.Intn(len(candidates))], nil
 }
 
@@ -503,9 +455,6 @@ func (app *App) buildStageResponse(session *Session) StageConfig {
 		response.Title = "Peer Support Group Chat"
 		if conditionData, ok := app.data.Conditions[session.Condition]; ok {
 			response.AllScripts = conditionData.Stages
-		} else {
-			app.logger.Error("unknown condition for session",
-				"sessionId", session.UserID, "condition", session.Condition)
 		}
 	case StatePostSurvey:
 		response.Type = "survey"
@@ -517,8 +466,6 @@ func (app *App) buildStageResponse(session *Session) StageConfig {
 	default:
 		response.Type = "unknown"
 		response.Title = "Unknown Stage"
-		app.logger.Error("unhandled session state",
-			"sessionId", session.UserID, "state", session.CurrentState)
 	}
 	return response
 }
@@ -529,18 +476,18 @@ func initDB(path string) (*sql.DB, error) {
 		return nil, err
 	}
 	_, err = db.Exec(`
-		CREATE TABLE IF NOT EXISTS sessions (
-			user_id TEXT PRIMARY KEY,
-			condition TEXT NOT NULL,
-			current_state TEXT NOT NULL,
-			pre_survey_data TEXT,
-			chat_transcript TEXT,
-			stage_1_comfort_score INTEGER,
-			stage_2_comfort_score INTEGER,
-			post_survey_data TEXT,
-			created_at TEXT NOT NULL
-		)
-	`)
+        CREATE TABLE IF NOT EXISTS sessions (
+            user_id TEXT PRIMARY KEY,
+            condition TEXT NOT NULL,
+            current_state TEXT NOT NULL,
+            pre_survey_data TEXT,
+            chat_transcript TEXT,
+            stage_1_comfort_score INTEGER,
+            stage_2_comfort_score INTEGER,
+            post_survey_data TEXT,
+            created_at TEXT NOT NULL
+        )
+    `)
 	if err != nil {
 		return nil, err
 	}
@@ -552,18 +499,18 @@ func saveSession(db *sql.DB, session *Session) error {
 	preSurveyData := string(session.PreSurveyData)
 	postSurveyData := string(session.PostSurveyData)
 	_, err := db.Exec(`
-		INSERT INTO sessions (user_id, condition, current_state, pre_survey_data, chat_transcript, stage_1_comfort_score, stage_2_comfort_score, post_survey_data, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(user_id) DO UPDATE SET
-			condition=excluded.condition,
-			current_state=excluded.current_state,
-			pre_survey_data=excluded.pre_survey_data,
-			chat_transcript=excluded.chat_transcript,
-			stage_1_comfort_score=excluded.stage_1_comfort_score,
-			stage_2_comfort_score=excluded.stage_2_comfort_score,
-			post_survey_data=excluded.post_survey_data,
-			created_at=excluded.created_at
-	`, session.UserID, session.Condition, session.CurrentState, preSurveyData, chatTranscript, session.Stage1ComfortScore, session.Stage2ComfortScore, postSurveyData, session.CreatedAt.Format(time.RFC3339Nano))
+        INSERT INTO sessions (user_id, condition, current_state, pre_survey_data, chat_transcript, stage_1_comfort_score, stage_2_comfort_score, post_survey_data, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET
+            condition=excluded.condition,
+            current_state=excluded.current_state,
+            pre_survey_data=excluded.pre_survey_data,
+            chat_transcript=excluded.chat_transcript,
+            stage_1_comfort_score=excluded.stage_1_comfort_score,
+            stage_2_comfort_score=excluded.stage_2_comfort_score,
+            post_survey_data=excluded.post_survey_data,
+            created_at=excluded.created_at
+    `, session.UserID, session.Condition, session.CurrentState, preSurveyData, chatTranscript, session.Stage1ComfortScore, session.Stage2ComfortScore, postSurveyData, session.CreatedAt.Format(time.RFC3339Nano))
 	return err
 }
 
@@ -572,9 +519,9 @@ func loadSession(db *sql.DB, userID string) (*Session, error) {
 	var preSurveyData, chatTranscript, postSurveyData, createdAt string
 	var stage1Score, stage2Score sql.NullInt64
 	err := db.QueryRow(`
-		SELECT user_id, condition, current_state, pre_survey_data, chat_transcript, stage_1_comfort_score, stage_2_comfort_score, post_survey_data, created_at
-		FROM sessions WHERE user_id = ?
-	`, userID).Scan(&session.UserID, &session.Condition, &session.CurrentState, &preSurveyData, &chatTranscript, &stage1Score, &stage2Score, &postSurveyData, &createdAt)
+        SELECT user_id, condition, current_state, pre_survey_data, chat_transcript, stage_1_comfort_score, stage_2_comfort_score, post_survey_data, created_at
+        FROM sessions WHERE user_id = ?
+    `, userID).Scan(&session.UserID, &session.Condition, &session.CurrentState, &preSurveyData, &chatTranscript, &stage1Score, &stage2Score, &postSurveyData, &createdAt)
 	if err != nil {
 		return nil, err
 	}
@@ -618,91 +565,13 @@ func getEnvOrDefault(key, fallback string) string {
 	return fallback
 }
 
-type surveyScaleSpec struct {
-	prefix       string
-	reverseItems []int
-	maxScore     float64
-}
-
 func sanitizeSurveyData(data map[string]any) map[string]any {
 	if data == nil {
 		return nil
 	}
-
 	cleanData := make(map[string]any, len(data))
 	for key, value := range data {
 		cleanData[key] = value
 	}
 	return cleanData
 }
-
-func getNumericValue(value any) (float64, bool) {
-	switch typedValue := value.(type) {
-	case float64:
-		return typedValue, true
-	case float32:
-		return float64(typedValue), true
-	case int:
-		return float64(typedValue), true
-	case int32:
-		return float64(typedValue), true
-	case int64:
-		return float64(typedValue), true
-	default:
-		return 0, false
-	}
-}
-
-func reverseScoreValue(value, maxScore float64) float64 {
-	return (maxScore + 1.0) - value
-}
-
-func buildReverseScoredAnalysis(data map[string]any, specs []surveyScaleSpec) map[string]any {
-	if data == nil {
-		return nil
-	}
-
-	analysis := make(map[string]any)
-	for _, spec := range specs {
-		reverseValues := make(map[string]any)
-		for _, item := range spec.reverseItems {
-			key := fmt.Sprintf("%s_%d", spec.prefix, item)
-			if numericValue, ok := getNumericValue(data[key]); ok {
-				reverseValues[key] = reverseScoreValue(numericValue, spec.maxScore)
-			}
-		}
-		if len(reverseValues) > 0 {
-			analysis[spec.prefix] = map[string]any{
-				"reverse_scored": reverseValues,
-			}
-		}
-	}
-
-	if len(analysis) == 0 {
-		return nil
-	}
-	return analysis
-}
-
-func assessmentTitle(state SessionState) string {
-	switch state {
-	case StateAssessment1, StateAssessment2:
-		return "Between-stage assessment"
-	default:
-		return "Assessment"
-	}
-}
-
-func stageTitle(state SessionState) string {
-	switch state {
-	case StateChatStage1:
-		return "Stage 1 – Early baseline"
-	case StateChatStage2:
-		return "Stage 2 – Mid vulnerability"
-	case StateChatStage3:
-		return "Stage 3 – Late vulnerability"
-	default:
-		return "Chat"
-	}
-}
-
