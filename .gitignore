@@ -21,3 +21,10 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# go build output and local sqlite database
+/src/go/multibot
+/src/go/sessions.db
+
+# browser automation artifacts
+.playwright-mcp/
