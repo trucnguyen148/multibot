@@ -16,6 +16,9 @@ interface ChatMessage {
   text: string;
   timestamp: string;
   stage: string;
+  // Set explicitly rather than inferred by comparing sender to userName, so a
+  // participant who calls themselves Sam or Vieno still renders correctly.
+  isUser?: boolean;
   isAssessment?: boolean;
   assessmentScore?: number;
 }
@@ -114,6 +117,7 @@ export const ChatInterface = ({
       text: inputValue.trim(),
       timestamp: new Date().toISOString(),
       stage: internalStage,
+      isUser: true,
     };
 
     setMessages((prev) => [...prev, userMsg]);
@@ -214,7 +218,7 @@ export const ChatInterface = ({
 
         <Box sx={{ flexGrow: 1, overflowY: 'auto', p: 3, bgcolor: '#f8f9fa' }}>
           {messages.map((msg) => {
-            const isUser = msg.sender === userName || msg.sender === 'You';
+            const isUser = msg.isUser === true;
 
             if (msg.isAssessment) {
               if (!ENABLE_ASSESSMENTS) return null;

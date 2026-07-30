@@ -40,6 +40,7 @@ type ChatMessage struct {
 	Text            string    `json:"text"`
 	Timestamp       time.Time `json:"timestamp"`
 	Stage           string    `json:"stage"`
+	IsUser          bool      `json:"isUser,omitempty"`
 	IsAssessment    bool      `json:"isAssessment,omitempty"`
 	AssessmentScore *int      `json:"assessmentScore,omitempty"`
 }
@@ -247,7 +248,8 @@ func (app *App) submitHandler(w http.ResponseWriter, r *http.Request) {
 	var payload struct {
 		SessionID          string         `json:"sessionId"`
 		CurrentState       string         `json:"currentState"`
-		ProlificID         string         `json:"prolificId"` // From Onboarding
+		ProlificID         string         `json:"prolificId"`  // From Onboarding
+		DisplayName        string         `json:"displayName"` // Chat name chosen at onboarding
 		PreSurveyData      map[string]any `json:"preSurveyData"`
 		ChatTranscript     []ChatMessage  `json:"chatTranscript"`
 		Stage1ComfortScore *int           `json:"stage1ComfortScore"`
@@ -278,6 +280,11 @@ func (app *App) submitHandler(w http.ResponseWriter, r *http.Request) {
 			initialData := map[string]any{
 				"prolific_id": payload.ProlificID,
 			}
+			// Self-chosen chat name. Participants are told a nickname is fine,
+			// but treat it as personal data since some will use a real name.
+			if payload.DisplayName != "" {
+				initialData["display_name"] = payload.DisplayName
+			}
 			data, _ := json.Marshal(initialData)
 			session.PreSurveyData = data
 		}
@@ -288,12 +295,15 @@ func (app *App) submitHandler(w http.ResponseWriter, r *http.Request) {
 			// Reverse AIAS "Risks" factor. (Items 10, 11, 12, 13)
 			reverseScoreMap(payload.PreSurveyData, "AIAS", []int{10, 11, 12, 13}, 5.0)
 			
-			// Extract and preserve the existing prolific_id 
+			// Carry over the identifiers written at onboarding, which would
+			// otherwise be lost when this payload replaces PreSurveyData.
 			var existingData map[string]any
 			if len(session.PreSurveyData) > 0 {
 				json.Unmarshal(session.PreSurveyData, &existingData)
-				if id, ok := existingData["prolific_id"]; ok {
-					payload.PreSurveyData["prolific_id"] = id
+				for _, key := range []string{"prolific_id", "display_name"} {
+					if value, ok := existingData[key]; ok {
+						payload.PreSurveyData[key] = value
+					}
 				}
 			}
 

@@ -87,6 +87,7 @@ function App() {
 
   // Onboarding State
   const [prolificId, setProlificId] = useState('');
+  const [displayName, setDisplayName] = useState('');
   const [consentGiven, setConsentGiven] = useState(false);
 
   const [preSurvey, setPreSurvey] = useState<SurveyResponse>(initialPreSurvey);
@@ -198,10 +199,11 @@ function App() {
 
   const handleOnboardingSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!prolificId || !consentGiven) return;
+    if (!prolificId.trim() || !displayName.trim() || !consentGiven) return;
     await submitStage({
       currentState: 'STATE_ONBOARDING',
-      prolificId,
+      prolificId: prolificId.trim(),
+      displayName: displayName.trim(),
     });
   };
 
@@ -301,6 +303,8 @@ function App() {
               stage={stage}
               prolificId={prolificId}
               setProlificId={setProlificId}
+              displayName={displayName}
+              setDisplayName={setDisplayName}
               consentGiven={consentGiven}
               setConsentGiven={setConsentGiven}
               handleOnboardingSubmit={handleOnboardingSubmit}
@@ -321,8 +325,8 @@ function App() {
           {stage.type === 'chat' && (
             <Box sx={{ height: '100%' }}>
               <ChatInterface
-                userName={prolificId}
-                conditionScripts={personalizeScripts(stage.allScripts ?? {}, prolificId)}
+                userName={displayName}
+                conditionScripts={personalizeScripts(stage.allScripts ?? {}, displayName)}
                 onChatComplete={async (transcript, stage1Score, stage2Score) => {
                   await submitStage({
                     currentState: 'STATE_INTERACTION',

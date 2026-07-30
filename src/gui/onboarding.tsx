@@ -16,19 +16,35 @@ interface OnBoardingProps {
   stage: StageConfig;
   prolificId: string;
   setProlificId: (id: string) => void;
+  displayName: string;
+  setDisplayName: (name: string) => void;
   consentGiven: boolean;
   setConsentGiven: (consent: boolean) => void;
   handleOnboardingSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
 }
 
+// Bot personas in data.json. A participant who picks one of these would make
+// their own messages indistinguishable from a bot's in the transcript.
+const RESERVED_NAMES = ['vieno', 'sam', 'charlie'];
+
 export const OnBoarding: React.FC<OnBoardingProps> = ({
   stage,
   prolificId,
   setProlificId,
+  displayName,
+  setDisplayName,
   consentGiven,
   setConsentGiven,
   handleOnboardingSubmit,
 }) => {
+  const trimmedName = displayName.trim();
+  const nameIsReserved = RESERVED_NAMES.includes(trimmedName.toLowerCase());
+  const nameTooLong = trimmedName.length > 20;
+  const nameError = nameIsReserved
+    ? 'That name is already used by someone else in the chat. Please choose another.'
+    : nameTooLong
+      ? 'Please keep this under 20 characters.'
+      : '';
   return (
     <Paper elevation={2} sx={{ p: 4, borderRadius: 2 }}>
       <Typography variant="h4" gutterBottom>
@@ -36,7 +52,7 @@ export const OnBoarding: React.FC<OnBoardingProps> = ({
       </Typography>
       <Typography variant="body1" sx={{ color: 'text.secondary', mb: 2 }}>
         Thank you for participating in this Human-Computer Interaction study. Please review the
-        information below and provide your Prolific ID to begin.
+        information below and provide your details to begin.
       </Typography>
 
       <Divider sx={{ my: 3 }} />
@@ -59,7 +75,28 @@ export const OnBoarding: React.FC<OnBoardingProps> = ({
 
           <Box>
             <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 'bold' }}>
-              2. Informed Consent
+              2. Your name in the chat
+            </Typography>
+            <Typography variant="body2" sx={{ color: 'text.secondary', mb: 2 }}>
+              This is how the other chat members will address you. A first name or a nickname is
+              fine, and you do not have to use your real name.
+            </Typography>
+            <TextField
+              fullWidth
+              variant="outlined"
+              label="First name or nickname"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              error={Boolean(nameError)}
+              helperText={nameError}
+              slotProps={{ htmlInput: { maxLength: 30 } }}
+              required
+            />
+          </Box>
+
+          <Box>
+            <Typography variant="subtitle1" gutterBottom sx={{ fontWeight: 'bold' }}>
+              3. Informed Consent
             </Typography>
             <Paper
               variant="outlined"
@@ -86,7 +123,7 @@ export const OnBoarding: React.FC<OnBoardingProps> = ({
             type="submit"
             variant="contained"
             size="large"
-            disabled={!prolificId.trim() || !consentGiven}
+            disabled={!prolificId.trim() || !trimmedName || Boolean(nameError) || !consentGiven}
           >
             Start Pre-Survey
           </Button>
