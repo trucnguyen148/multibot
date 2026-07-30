@@ -63,7 +63,20 @@ const initialPostSurvey: SurveyResponse = {
 const isLocal =
   window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
-const API_BASE_URL = isLocal ? 'http://localhost:8080' : process.env.REACT_APP_BACKEND_URL;
+// REACT_APP_BACKEND_URL is baked in at build time, not read at runtime, so
+// changing it on the host requires a rebuild rather than a restart.
+const configuredBackendUrl = process.env.REACT_APP_BACKEND_URL?.replace(/\/+$/, '');
+
+const API_BASE_URL = isLocal ? 'http://localhost:8080' : configuredBackendUrl;
+
+if (!isLocal && !API_BASE_URL) {
+  // Every request would resolve against "undefined/api/...", fail, and drop the
+  // participant into the offline fallback below, which saves no data at all.
+  console.error(
+    'REACT_APP_BACKEND_URL was not set when this bundle was built. ' +
+      'No responses will reach the backend.'
+  );
+}
 
 function App() {
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -158,9 +171,13 @@ function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId, ...payload }),
       });
+      if (!response.ok) throw new Error('Backend unavailable');
       const result = await response.json();
 
-      if (result.nextStage) setStage(result.nextStage);
+      // Without an explicit throw here a malformed reply would leave the
+      // participant on a screen whose submit button silently does nothing.
+      if (!result.nextStage) throw new Error('Response missing nextStage');
+      setStage(result.nextStage);
     } catch {
       const currentState =
         (payload.currentState as string) ?? stage?.currentState ?? 'STATE_ONBOARDING';
