@@ -23,22 +23,25 @@ import (
 
 type SessionState string
 
+// Session states. These mirror the coarse states the frontend drives in
+// src/index.tsx. The chat is one server-visible step (StateInteraction); the
+// three chat stages run client-side inside that step.
 const (
+	StateOnboarding  SessionState = "STATE_ONBOARDING"
 	StatePreSurvey   SessionState = "STATE_PRE_SURVEY"
-	StateChatStage1  SessionState = "STATE_CHAT_STAGE_1"
-	StateAssessment1 SessionState = "STATE_ASSESSMENT_1"
-	StateChatStage2  SessionState = "STATE_CHAT_STAGE_2"
-	StateAssessment2 SessionState = "STATE_ASSESSMENT_2"
-	StateChatStage3  SessionState = "STATE_CHAT_STAGE_3"
+	StateInteraction SessionState = "STATE_INTERACTION"
 	StatePostSurvey  SessionState = "STATE_POST_SURVEY"
 	StateComplete    SessionState = "STATE_COMPLETE"
 )
 
 type ChatMessage struct {
-	Sender    string    `json:"sender"`
-	Text      string    `json:"text"`
-	Timestamp time.Time `json:"timestamp"`
-	Stage     string    `json:"stage"`
+	ID              string    `json:"id,omitempty"`
+	Sender          string    `json:"sender"`
+	Text            string    `json:"text"`
+	Timestamp       time.Time `json:"timestamp"`
+	Stage           string    `json:"stage"`
+	IsAssessment    bool      `json:"isAssessment,omitempty"`
+	AssessmentScore *int      `json:"assessmentScore,omitempty"`
 }
 
 type Session struct {
@@ -58,13 +61,16 @@ type BotScript struct {
 	Text   string `json:"text"`
 }
 
+// StageConfig is the shape src/index.tsx expects back from /api/stage and as
+// the nextStage field of /api/submit. AllScripts carries every chat stage for
+// the assigned condition at once, because the frontend plays them locally.
 type StageConfig struct {
-	Type           string      `json:"type"`
-	CurrentState   string      `json:"currentState"`
-	Condition      string      `json:"condition"`
-	Title          string      `json:"title"`
-	BotScripts     []BotScript `json:"botScripts,omitempty"`
-	CompletionCode string      `json:"completionCode,omitempty"`
+	Type           string                 `json:"type"`
+	CurrentState   string                 `json:"currentState"`
+	Condition      string                 `json:"condition"`
+	Title          string                 `json:"title"`
+	AllScripts     map[string][]BotScript `json:"allScripts,omitempty"`
+	CompletionCode string                 `json:"completionCode,omitempty"`
 }
 
 type experimentData struct {
@@ -88,8 +94,6 @@ func main() {
 	// 1. Initialize Structured Logging
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
-
-	rand.Seed(time.Now().UnixNano())
 
 	root, err := os.Getwd()
 	if err != nil {
@@ -208,7 +212,7 @@ func (app *App) createSessionHandler(w http.ResponseWriter, r *http.Request) {
 	session := &Session{
 		UserID:       fmt.Sprintf("sess-%d", time.Now().UnixNano()),
 		Condition:    condition,
-		CurrentState: StatePreSurvey,
+		CurrentState: StateOnboarding,
 		CreatedAt:    time.Now().UTC(),
 	}
 
@@ -245,9 +249,9 @@ func (app *App) submitHandler(w http.ResponseWriter, r *http.Request) {
 		CurrentState       string         `json:"currentState"`
 		ProlificID         string         `json:"prolificId"` // From Onboarding
 		PreSurveyData      map[string]any `json:"preSurveyData"`
-		ChatTranscript     []any          `json:"chatTranscript"` // Array of chat messages
-		Stage1ComfortScore int            `json:"stage1ComfortScore"`
-		Stage2ComfortScore int            `json:"stage2ComfortScore"`
+		ChatTranscript     []ChatMessage  `json:"chatTranscript"`
+		Stage1ComfortScore *int           `json:"stage1ComfortScore"`
+		Stage2ComfortScore *int           `json:"stage2ComfortScore"`
 		PostSurveyData     map[string]any `json:"postSurveyData"`
 	}
 
@@ -277,7 +281,7 @@ func (app *App) submitHandler(w http.ResponseWriter, r *http.Request) {
 			data, _ := json.Marshal(initialData)
 			session.PreSurveyData = data
 		}
-		session.CurrentState = "STATE_PRE_SURVEY"
+		session.CurrentState = StatePreSurvey
 
 	case "STATE_PRE_SURVEY": // Or your StatePreSurvey constant
 		if payload.PreSurveyData != nil {
@@ -296,19 +300,19 @@ func (app *App) submitHandler(w http.ResponseWriter, r *http.Request) {
 			data, _ := json.Marshal(payload.PreSurveyData)
 			session.PreSurveyData = data
 		}
-		session.CurrentState = "STATE_INTERACTION"
+		session.CurrentState = StateInteraction
 
 	case "STATE_INTERACTION":
 		// Handle the full chat transcript dump from the frontend
 		if payload.ChatTranscript != nil {
-			data, _ := json.Marshal(payload.ChatTranscript)
-			session.ChatTranscript = data // Assuming ChatTranscript is []byte in your Session struct
+			session.ChatTranscript = payload.ChatTranscript
 		}
-		// Save the mid-chat assessment scores
+		// Save the mid-chat assessment scores. These stay nil when the
+		// between-stage assessments are disabled in chat-interface.tsx.
 		session.Stage1ComfortScore = payload.Stage1ComfortScore
 		session.Stage2ComfortScore = payload.Stage2ComfortScore
-		
-		session.CurrentState = "STATE_POST_SURVEY"
+
+		session.CurrentState = StatePostSurvey
 
 	case "STATE_POST_SURVEY":
 		if payload.PostSurveyData != nil {
@@ -318,7 +322,11 @@ func (app *App) submitHandler(w http.ResponseWriter, r *http.Request) {
 			data, _ := json.Marshal(payload.PostSurveyData)
 			session.PostSurveyData = data
 		}
-		session.CurrentState = "STATE_COMPLETE"
+		session.CurrentState = StateComplete
+
+	default:
+		app.logger.Warn("submit for unrecognized state",
+			"sessionId", payload.SessionID, "state", payload.CurrentState)
 	}
 
 	// 3. Save updated session to SQLite
@@ -329,14 +337,13 @@ func (app *App) submitHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 4. Build and return the next stage configuration (Injects the Prolific Code if complete)
-	nextStage := buildStageResponse(session) // Using your existing response builder
+	nextStage := app.buildStageResponse(session)
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{
-		"sessionId":    session.ID,
+	writeJSON(w, map[string]any{
+		"sessionId":    session.UserID,
 		"currentState": session.CurrentState,
 		"nextStage":    nextStage,
-	})
+	}, app.logger)
 }
 
 func (app *App) exportHandler(w http.ResponseWriter, r *http.Request) {
@@ -407,34 +414,38 @@ func (app *App) randomCondition() string {
 
 func (app *App) buildStageResponse(session *Session) StageConfig {
 	response := StageConfig{
-		Type:         "survey",
 		CurrentState: string(session.CurrentState),
 		Condition:    session.Condition,
-		Title:        "Pre-interaction survey",
 	}
 
-	switch SessionState(session.CurrentState) {
+	switch session.CurrentState {
+	case StateOnboarding:
+		response.Type = "onboarding"
+		response.Title = "Welcome to the Study"
 	case StatePreSurvey:
 		response.Type = "survey"
-		response.Title = "Pre-interaction survey"
-	case StateChatStage1, StateChatStage2, StateChatStage3:
+		response.Title = "Pre-interaction Survey"
+	case StateInteraction:
 		response.Type = "chat"
-		response.Title = stageTitle(session.CurrentState)
+		response.Title = "Peer Support Group Chat"
 		if conditionData, ok := app.data.Conditions[session.Condition]; ok {
-			if scripts, ok := conditionData.Stages[string(session.CurrentState)]; ok {
-				response.BotScripts = scripts
-			}
+			response.AllScripts = conditionData.Stages
+		} else {
+			app.logger.Error("unknown condition for session",
+				"sessionId", session.UserID, "condition", session.Condition)
 		}
-	case StateAssessment1, StateAssessment2:
-		response.Type = "assessment"
-		response.Title = assessmentTitle(session.CurrentState)
 	case StatePostSurvey:
 		response.Type = "survey"
-		response.Title = "Post-interaction survey"
+		response.Title = "Post-interaction Survey"
 	case StateComplete:
 		response.Type = "complete"
-		response.Title = "Session complete"
-		response.CompletionCode = getEnvOrDefault("PROLIFIC_COMPLETION_CODE", "DEFAULT_CODE") 
+		response.Title = "Session Complete"
+		response.CompletionCode = getEnvOrDefault("PROLIFIC_COMPLETION_CODE", "DEFAULT_CODE")
+	default:
+		response.Type = "unknown"
+		response.Title = "Unknown Stage"
+		app.logger.Error("unhandled session state",
+			"sessionId", session.UserID, "state", session.CurrentState)
 	}
 	return response
 }
@@ -532,60 +543,6 @@ func getEnvOrDefault(key, fallback string) string {
 		return value
 	}
 	return fallback
-}
-
-func buildChatMessage(raw map[string]any, stage SessionState) ChatMessage {
-	text := ""
-	if v, ok := raw["text"].(string); ok {
-		text = v
-	}
-	return ChatMessage{
-		Sender:    "You",
-		Text:      text,
-		Timestamp: time.Now().UTC(),
-		Stage:     string(stage),
-	}
-}
-
-func reverseAIAS(raw map[string]any) map[string]any {
-	if raw == nil {
-		return nil
-	}
-	copyData := make(map[string]any, len(raw))
-	for k, v := range raw {
-		copyData[k] = v
-	}
-	if aias, ok := copyData["AIAS"].(map[string]any); ok {
-		reverseItems := []string{"item4", "item5", "item6", "item7"}
-		for _, item := range reverseItems {
-			if val, ok := aias[item].(float64); ok {
-				aias[item] = 6 - val
-			}
-		}
-	}
-	return copyData
-}
-
-func assessmentTitle(state SessionState) string {
-	switch state {
-	case StateAssessment1, StateAssessment2:
-		return "Between-stage assessment"
-	default:
-		return "Assessment"
-	}
-}
-
-func stageTitle(state SessionState) string {
-	switch state {
-	case StateChatStage1:
-		return "Stage 1 – Early baseline"
-	case StateChatStage2:
-		return "Stage 2 – Mid vulnerability"
-	case StateChatStage3:
-		return "Stage 3 – Late vulnerability"
-	default:
-		return "Chat"
-	}
 }
 
 // reverseScoreMap finds specific keys in the JSON map and applies standard Likert reverse-scoring.
