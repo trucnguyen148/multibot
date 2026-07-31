@@ -129,11 +129,8 @@ test rows in that group so far, but do not mix them with real data.
 
 ## The paper
 
-The write-up lives outside this repository and is not tracked here.
-
-The paper and the implementation have diverged on several points, including recruitment, sample size,
-and how the DDI is used. The detailed list is kept locally rather than in this file, because it
-discusses an unpublished draft. Ask Simo for it.
+The write-up lives in its own repository and is not tracked here. Its open items, including where it
+and this implementation disagree, are tracked there rather than in this file. Ask Simo for the path.
 
 ## Methodology
 
