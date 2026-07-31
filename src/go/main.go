@@ -57,6 +57,9 @@ type Session struct {
 type BotScript struct {
 	Sender string `json:"sender"`
 	Text   string `json:"text"`
+	// Tag classifies the turn so the design invariants in scripts_test.go can be
+	// checked mechanically. One of: open, peer-neutral, question, disclosure, ack.
+	Tag string `json:"tag,omitempty"`
 }
 
 type StageConfig struct {
