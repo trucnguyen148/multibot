@@ -59,6 +59,87 @@ func TestIsTestSession(t *testing.T) {
 	}
 }
 
+func TestIsTruthy(t *testing.T) {
+	for _, value := range []string{"true", "TRUE", "1", "yes", " yes "} {
+		if !isTruthy(value) {
+			t.Fatalf("isTruthy(%q) = false, want true", value)
+		}
+	}
+	for _, value := range []string{"", "false", "0", "no", "maybe"} {
+		if isTruthy(value) {
+			t.Fatalf("isTruthy(%q) = true, want false", value)
+		}
+	}
+}
+
+func newTestApp() *App {
+	app := &App{conditions: []string{"1-1", "2-1", "3-1"}}
+	app.data.Conditions = map[string]struct {
+		Label  string                 `json:"label"`
+		Stages map[string][]BotScript `json:"stages"`
+	}{
+		"1-1": {Label: "Single bot"},
+		"2-1": {Label: "Two bots"},
+		"3-1": {Label: "Three bots"},
+	}
+	return app
+}
+
+func TestTestConditionHonoursAnExplicitRequest(t *testing.T) {
+	app := newTestApp()
+
+	got, err := app.testCondition("3-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "3-1" {
+		t.Fatalf("expected the requested condition 3-1, got %q", got)
+	}
+}
+
+func TestTestConditionRejectsAnUnknownRequest(t *testing.T) {
+	app := newTestApp()
+
+	// A typo must fail loudly. Silently falling back to a random cell would let
+	// a researcher believe they had walked a condition they never saw.
+	if _, err := app.testCondition("4-1"); err == nil {
+		t.Fatal("expected an unknown condition to be rejected")
+	}
+}
+
+func TestTestConditionFallsBackWhenUnspecified(t *testing.T) {
+	app := newTestApp()
+
+	got, err := app.testCondition("")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, known := app.data.Conditions[got]; !known {
+		t.Fatalf("expected a configured condition, got %q", got)
+	}
+}
+
+func TestTestConditionIgnoresTheQuota(t *testing.T) {
+	app := newTestApp()
+
+	// selectCondition would refuse here. A walkthrough must still work once
+	// recruitment is full, which is exactly when you want to check the flow.
+	full := conditionTally{
+		started: map[string]int{"1-1": 60, "2-1": 60, "3-1": 60},
+		completed: map[string]int{
+			"1-1": targetUsersPerCondition,
+			"2-1": targetUsersPerCondition,
+			"3-1": targetUsersPerCondition,
+		},
+	}
+	if _, err := app.selectCondition(full); err == nil {
+		t.Fatal("precondition failed: expected the allocator to be full")
+	}
+	if _, err := app.testCondition("2-1"); err != nil {
+		t.Fatalf("expected a test walkthrough to bypass the quota, got %v", err)
+	}
+}
+
 func TestSelectConditionBalancesOnStartedSessions(t *testing.T) {
 	app := &App{conditions: []string{"1-1", "2-1", "3-1"}}
 

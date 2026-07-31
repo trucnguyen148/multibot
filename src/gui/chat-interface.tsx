@@ -5,6 +5,19 @@ import SmartToyIcon from '@mui/icons-material/SmartToy';
 import PersonIcon from '@mui/icons-material/Person';
 import AssessmentIcon from '@mui/icons-material/Assessment';
 
+// Bot messages are delayed in proportion to their length, so the pacing reads as
+// someone typing rather than pasting. 350ms per word is roughly 170 words per
+// minute, fast for a person and still believable. The previous 200ms was about
+// 300 wpm, four times a realistic rate, and was the most obvious tell that the
+// other chat members were scripted.
+//
+// The cap stops the longest scripted message (the 68-word Vieno monologue in
+// stage 2 of condition 1-1) from stalling the session for 25 seconds. Anything
+// past roughly ten seconds of "typing..." reads as a stall rather than as care.
+const MS_PER_WORD = 350;
+const BASE_DELAY_MS = 1000;
+const MAX_DELAY_MS = 10000;
+
 interface BotScript {
   sender: string;
   text: string;
@@ -80,7 +93,7 @@ export const ChatInterface = ({
         setTypingBot(script.sender);
 
         const wordCount = script.text.split(/\s+/).filter((word) => word.length > 0).length;
-        const delay = wordCount * 200 + 1000;
+        const delay = Math.min(wordCount * MS_PER_WORD + BASE_DELAY_MS, MAX_DELAY_MS);
 
         await new Promise<void>((resolve) => setTimeout(resolve, delay));
 

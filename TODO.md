@@ -32,13 +32,26 @@ Deployment details, URLs and credentials are deliberately kept out of this file.
 
 ## Test mode
 
-Use `?test=true` to walk the whole flow without answering anything. Combine it with the Prolific
-parameters if you want to check those too:
+Open `/test` for a menu of shortlinks into the flow, one per condition, plus a live backend health
+check. That last part matters because the participant flow falls back to local state on any backend
+failure and still reaches a completion code, so a run that looks fine in the browser proves nothing
+about whether anything was saved.
+
+The underlying urls, if you prefer to type them:
 
 ```
-/?test=true
+/test                                    researcher menu, creates no session
+/?test=true                              test mode, condition assigned at random
+/?test=true&condition=2-1                test mode, forced condition
 /?PROLIFIC_PID=<id>&STUDY_ID=<id>&SESSION_ID=<id>
 ```
+
+`condition` is honoured only alongside `test=true`, and an unknown key returns 400 rather than
+falling back to a random cell, so a typo cannot leave you believing you walked a condition you never
+saw. Test sessions bypass the allocator entirely, so they neither consume a participant slot nor get
+turned away once recruitment is full. The `test_mode` flag is now written when the session row is
+created rather than at the onboarding submit, so a walkthrough abandoned partway through is still
+excluded from the tally.
 
 Every preset uses the lowest value on its scale, so test rows are recognisable in the data even if
 the flag is ever missed. Filter on `pre_survey_data.test_mode` when analysing.
@@ -114,6 +127,14 @@ test rows in that group so far, but do not mix them with real data.
 - [ ] Pre-interaction mood items and a human-AI trust measure appear as decisions in the design and are
       not implemented.
 
+## The paper
+
+The write-up lives outside this repository and is not tracked here.
+
+The paper and the implementation have diverged on several points, including recruitment, sample size,
+and how the DDI is used. The detailed list is kept locally rather than in this file, because it
+discusses an unpublished draft. Ask Simo for it.
+
 ## Methodology
 
 - [ ] **Condition assignment is unbalanced.** Each session draws a condition uniformly at random and
@@ -132,8 +153,17 @@ test rows in that group so far, but do not mix them with real data.
       the guarded, deflecting participants the codebook is built to detect, and it is the most likely
       way someone concludes the other members are not real. Consider a short neutral bridging line, or
       accept it and watch for it in the qualitative responses.
-- [ ] **Bot typing speed is about 300 words per minute**, roughly four times a realistic rate. The delay
-      is `words * 200ms + 1s` in `chat-interface.tsx`. Worth slowing if believability matters.
+- [x] **Fixed: bot typing speed was about 300 words per minute**, roughly four times a realistic rate.
+      Now `words * 350ms + 1s`, capped at 10s, with the three values as named constants at the top of
+      `chat-interface.tsx`. That is about 170 wpm, fast for a person and still believable. The cap
+      stops the 68-word Vieno monologue in stage 2 of `1-1` from stalling the session for 25 seconds.
+      Total bot wait per session moves from 36 / 47 / 61s to 30 / 64 / 83s across `1-1` / `2-1` / `3-1`,
+      so this widens the time-on-task difference between conditions. Equalising the script content
+      across conditions fixes that and the disclosure-dose confound together.
+- [x] **Fixed: participants could see their assigned condition.** The header rendered
+      "Condition: 3-1" on every screen under the title "Multibot Research Prototype", so a participant
+      could infer that the number of other members was the manipulation. The condition is now shown
+      under `?test=true` only, and the title reads "Peer Support Study".
 
 ## Ethics and privacy
 

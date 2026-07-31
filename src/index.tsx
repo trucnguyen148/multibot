@@ -7,6 +7,7 @@ import { PreSurvey } from './gui/pre-survey';
 import { OnBoarding } from './gui/onboarding';
 import { PostSurvey } from './gui/post-survey';
 import { CompleteScreen } from './gui/complete-screen';
+import { TestMenu } from './gui/test-menu';
 import { BotScript, ExperimentData, StageConfig, SurveyResponse } from './utils';
 
 const experimentData = fallbackExperimentData as ExperimentData;
@@ -54,6 +55,16 @@ const PROLIFIC_SESSION_FROM_URL = readParam('SESSION_ID');
 // be filtered out of the export. Every preset uses the lowest value on its scale,
 // which makes test rows obvious in the data as well.
 const TEST_MODE = ['true', '1', 'yes'].includes(readParam('test').toLowerCase());
+
+// Lets a researcher walk a specific condition instead of reloading until chance
+// hands it over. The backend only honours it alongside ?test=true, so sending it
+// on its own does nothing.
+const CONDITION_FROM_URL = readParam('condition');
+
+// /test lists shortlinks into the flow. Matched on the pathname rather than with
+// a router, since `serve -s build` already rewrites unknown paths to index.html
+// and one page does not justify a routing dependency.
+const IS_TEST_MENU = window.location.pathname.replace(/\/+$/, '') === '/test';
 
 const buildScaleDefaults = (prefix: string, count: number, value: number): SurveyResponse => {
   const filled: SurveyResponse = {};
@@ -164,7 +175,13 @@ function App() {
   const initSession = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/session/init`, {
+      const params = new URLSearchParams();
+      if (TEST_MODE) {
+        params.set('test', 'true');
+        if (CONDITION_FROM_URL) params.set('condition', CONDITION_FROM_URL);
+      }
+      const query = params.toString();
+      const response = await fetch(`${API_BASE_URL}/api/session/init${query ? `?${query}` : ''}`, {
         method: 'POST',
       });
       if (!response.ok) {
@@ -175,7 +192,14 @@ function App() {
       setSessionId(nextSessionId);
       await loadStage(nextSessionId ?? '');
     } catch {
-      const condition = ['1-1', '2-1', '3-1'][Math.floor(Math.random() * 3)];
+      // Read off the bundled scripts rather than hardcoded, so renaming a
+      // condition in data.json cannot leave this branch pointing at keys that
+      // no longer exist.
+      const available = Object.keys(experimentData.conditions);
+      const condition =
+        CONDITION_FROM_URL && available.includes(CONDITION_FROM_URL)
+          ? CONDITION_FROM_URL
+          : available[Math.floor(Math.random() * available.length)];
       setSessionId(`demo-${Date.now()}`);
       setStage(buildFallbackStage('STATE_ONBOARDING', condition));
       setError(null);
@@ -315,11 +339,18 @@ function App() {
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Box>
             <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-              Multibot Research Prototype
+              Peer Support Study
             </Typography>
-            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-              Condition: {stage.condition}
-            </Typography>
+            {/* The assigned condition is a live demand characteristic. A
+                participant who can read "Condition: 3-1" off the header can
+                infer that the number of other members is the manipulation.
+                Researchers still need it while walking the flow, so it is
+                shown under ?test=true only. */}
+            {TEST_MODE && (
+              <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                Condition: {stage.condition}
+              </Typography>
+            )}
           </Box>
           {TEST_MODE && (
             <Box
@@ -410,6 +441,8 @@ function App() {
 const root = ReactDOM.createRoot(document.getElementById('root') as HTMLElement);
 root.render(
   <React.StrictMode>
-    <App />
+    {/* Rendered instead of App, so opening the menu does not create a session
+        row that then sits abandoned at onboarding. */}
+    {IS_TEST_MENU ? <TestMenu data={experimentData} apiBaseUrl={API_BASE_URL} /> : <App />}
   </React.StrictMode>
 );

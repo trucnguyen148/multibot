@@ -198,11 +198,37 @@ func (app *App) healthHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *App) createSessionHandler(w http.ResponseWriter, r *http.Request) {
-	condition, err := app.randomCondition()
-	if err != nil {
-		app.logger.Warn("condition assignment quota reached", "error", err)
-		http.Error(w, "Condition allocation is full", http.StatusConflict)
-		return
+	query := r.URL.Query()
+	testMode := isTruthy(query.Get("test"))
+	requested := strings.TrimSpace(query.Get("condition"))
+
+	var condition string
+	var err error
+
+	switch {
+	case testMode:
+		// A researcher walkthrough must never touch the allocator. It neither
+		// consumes a participant slot nor gets turned away once recruitment is
+		// full, which is exactly when you most want to walk the flow.
+		condition, err = app.testCondition(requested)
+		if err != nil {
+			app.logger.Warn("rejected test session", "condition", requested, "error", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+	default:
+		// Forcing a cell is a test-mode privilege. Honouring it for a real
+		// participant would let anyone who reads the bundle pick their own
+		// condition and skew the allocation.
+		if requested != "" {
+			app.logger.Warn("ignored condition override outside test mode", "condition", requested)
+		}
+		condition, err = app.randomCondition()
+		if err != nil {
+			app.logger.Warn("condition assignment quota reached", "error", err)
+			http.Error(w, "Condition allocation is full", http.StatusConflict)
+			return
+		}
 	}
 
 	session := &Session{
@@ -210,6 +236,12 @@ func (app *App) createSessionHandler(w http.ResponseWriter, r *http.Request) {
 		Condition:    condition,
 		CurrentState: StateOnboarding,
 		CreatedAt:    time.Now().UTC(),
+	}
+
+	// Flag the row at creation rather than waiting for the onboarding submit, so
+	// a walkthrough abandoned partway through is still excluded from the tally.
+	if testMode {
+		session.PreSurveyData = json.RawMessage(`{"test_mode":true}`)
 	}
 
 	if err := saveSession(app.db, session); err != nil {
@@ -471,6 +503,22 @@ func (app *App) tallyConditions() (conditionTally, error) {
 	return tally, rows.Err()
 }
 
+// testCondition resolves the cell for a researcher walkthrough. An explicit
+// request wins so long as it names a real condition; otherwise any cell will do,
+// since the row is excluded from the tally either way.
+func (app *App) testCondition(requested string) (string, error) {
+	if len(app.conditions) == 0 {
+		return "", fmt.Errorf("no conditions configured")
+	}
+	if requested == "" {
+		return app.conditions[rand.Intn(len(app.conditions))], nil
+	}
+	if _, known := app.data.Conditions[requested]; !known {
+		return "", fmt.Errorf("unknown condition %q", requested)
+	}
+	return requested, nil
+}
+
 func (app *App) randomCondition() (string, error) {
 	if len(app.conditions) == 0 {
 		return "1-1", nil
@@ -627,6 +675,17 @@ func writeJSON(w http.ResponseWriter, value any, logger *slog.Logger) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(value); err != nil {
 		logger.Error("failed to encode json response", "error", err)
+	}
+}
+
+// isTruthy accepts the same spellings the frontend does, so ?test=1 and
+// ?test=yes behave like ?test=true on both sides.
+func isTruthy(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "true", "1", "yes":
+		return true
+	default:
+		return false
 	}
 }
 
