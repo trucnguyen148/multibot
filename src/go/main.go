@@ -236,10 +236,14 @@ func (app *App) stageHandler(w http.ResponseWriter, r *http.Request) {
 
 func (app *App) submitHandler(w http.ResponseWriter, r *http.Request) {
 	var payload struct {
-		SessionID          string         `json:"sessionId"`
-		CurrentState       string         `json:"currentState"`
-		ProlificID         string         `json:"prolificId"`
-		DisplayName        string         `json:"displayName"`
+		SessionID    string `json:"sessionId"`
+		CurrentState string `json:"currentState"`
+		ProlificID   string `json:"prolificId"`
+		DisplayName  string `json:"displayName"`
+		StudyID      string `json:"studyId"`
+		// Prolific's own submission id, distinct from SessionID above.
+		ProlificSessionID  string         `json:"prolificSessionId"`
+		TestMode           bool           `json:"testMode"`
 		PreSurveyData      map[string]any `json:"preSurveyData"`
 		ChatTranscript     []ChatMessage  `json:"chatTranscript"`
 		Stage1ComfortScore *int           `json:"stage1ComfortScore"`
@@ -267,6 +271,18 @@ func (app *App) submitHandler(w http.ResponseWriter, r *http.Request) {
 			if payload.DisplayName != "" {
 				initialData["display_name"] = payload.DisplayName
 			}
+			// Prolific url params, kept so submissions can be reconciled against
+			// Prolific's own export.
+			if payload.StudyID != "" {
+				initialData["study_id"] = payload.StudyID
+			}
+			if payload.ProlificSessionID != "" {
+				initialData["prolific_session_id"] = payload.ProlificSessionID
+			}
+			// Researcher walked through with ?test=true. Exclude from analysis.
+			if payload.TestMode {
+				initialData["test_mode"] = true
+			}
 			data, _ := json.Marshal(initialData)
 			session.PreSurveyData = data
 		}
@@ -278,7 +294,11 @@ func (app *App) submitHandler(w http.ResponseWriter, r *http.Request) {
 			var existingData map[string]any
 			if len(session.PreSurveyData) > 0 {
 				json.Unmarshal(session.PreSurveyData, &existingData)
-				for _, key := range []string{"prolific_id", "display_name"} {
+				carryOver := []string{
+					"prolific_id", "display_name", "study_id",
+					"prolific_session_id", "test_mode",
+				}
+				for _, key := range carryOver {
 					if value, ok := existingData[key]; ok {
 						payload.PreSurveyData[key] = value
 					}

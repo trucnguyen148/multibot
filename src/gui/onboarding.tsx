@@ -16,6 +16,7 @@ interface OnBoardingProps {
   stage: StageConfig;
   prolificId: string;
   setProlificId: (id: string) => void;
+  prolificIdFromUrl?: boolean;
   displayName: string;
   setDisplayName: (name: string) => void;
   consentGiven: boolean;
@@ -31,6 +32,7 @@ export const OnBoarding: React.FC<OnBoardingProps> = ({
   stage,
   prolificId,
   setProlificId,
+  prolificIdFromUrl = false,
   displayName,
   setDisplayName,
   consentGiven,
@@ -69,6 +71,12 @@ export const OnBoarding: React.FC<OnBoardingProps> = ({
               label="Enter your Prolific ID"
               value={prolificId}
               onChange={(e) => setProlificId(e.target.value)}
+              // Read-only rather than disabled, so it stays legible and screen
+              // readers still announce it.
+              slotProps={{ htmlInput: { readOnly: prolificIdFromUrl } }}
+              helperText={
+                prolificIdFromUrl ? 'Filled in automatically from your Prolific link.' : ''
+              }
               required
             />
           </Box>

@@ -32,6 +32,51 @@ const initialPostSurvey: SurveyResponse = {
   reflection: '',
 };
 
+// --- PROLIFIC URL PARAMETERS ---
+// Prolific appends these when it sends a participant to the study, using a URL
+// of the form:
+//   https://<app>/?PROLIFIC_PID={{%PROLIFIC_PID%}}&STUDY_ID={{%STUDY_ID%}}&SESSION_ID={{%SESSION_ID%}}
+// Read once at module load, since they never change during a session.
+const urlParams = new URLSearchParams(window.location.search);
+const readParam = (key: string): string =>
+  (urlParams.get(key) ?? urlParams.get(key.toLowerCase()) ?? '').trim();
+
+const PROLIFIC_ID_FROM_URL = readParam('PROLIFIC_PID');
+const STUDY_ID_FROM_URL = readParam('STUDY_ID');
+// Prolific's own submission id. Named to avoid confusion with this app's
+// backend session id, which is a different thing entirely.
+const PROLIFIC_SESSION_FROM_URL = readParam('SESSION_ID');
+
+// --- TEST MODE ---
+// ?test=true lets a researcher walk the whole flow without answering anything.
+// Sessions created this way are flagged test_mode in the stored data so they can
+// be filtered out of the export. Every preset uses the lowest value on its scale,
+// which makes test rows obvious in the data as well.
+const TEST_MODE = ['true', '1', 'yes'].includes(readParam('test').toLowerCase());
+
+const buildScaleDefaults = (prefix: string, count: number, value: number): SurveyResponse => {
+  const filled: SurveyResponse = {};
+  for (let i = 1; i <= count; i += 1) {
+    filled[`${prefix}_${i}`] = value;
+  }
+  return filled;
+};
+
+// Must cover every key the surveys count, or their submit buttons stay disabled.
+// Pre-survey needs 21 keys, post-survey needs 15.
+const TEST_PRE_SURVEY: SurveyResponse = {
+  ...buildScaleDefaults('DDI', 12, 1),
+  ...buildScaleDefaults('SSRPH', 5, 0),
+  ...buildScaleDefaults('AIAS', 4, 1),
+};
+
+const TEST_POST_SURVEY: SurveyResponse = {
+  ...buildScaleDefaults('BFNE', 12, 1),
+  Self_Comfort: 1,
+  offline_support: 'No',
+  reflection: 'TEST MODE — placeholder, not a real response.',
+};
+
 // --- DYNAMIC API URL SETUP ---
 const isLocal =
   window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
@@ -59,12 +104,18 @@ function App() {
   const [isConnecting, setIsConnecting] = useState(false);
 
   // Onboarding State
-  const [prolificId, setProlificId] = useState('');
-  const [displayName, setDisplayName] = useState('');
-  const [consentGiven, setConsentGiven] = useState(false);
+  const [prolificId, setProlificId] = useState(
+    PROLIFIC_ID_FROM_URL || (TEST_MODE ? 'TEST_PARTICIPANT' : '')
+  );
+  const [displayName, setDisplayName] = useState(TEST_MODE ? 'Tester' : '');
+  const [consentGiven, setConsentGiven] = useState(TEST_MODE);
 
-  const [preSurvey, setPreSurvey] = useState<SurveyResponse>(initialPreSurvey);
-  const [postSurvey, setPostSurvey] = useState<SurveyResponse>(initialPostSurvey);
+  const [preSurvey, setPreSurvey] = useState<SurveyResponse>(
+    TEST_MODE ? TEST_PRE_SURVEY : initialPreSurvey
+  );
+  const [postSurvey, setPostSurvey] = useState<SurveyResponse>(
+    TEST_MODE ? TEST_POST_SURVEY : initialPostSurvey
+  );
 
   const buildFallbackStage = useCallback((currentState: string, condition = '1-1'): StageConfig => {
     const conditionData = experimentData.conditions[condition];
@@ -180,6 +231,9 @@ function App() {
       currentState: 'STATE_ONBOARDING',
       prolificId: prolificId.trim(),
       displayName: displayName.trim(),
+      studyId: STUDY_ID_FROM_URL,
+      prolificSessionId: PROLIFIC_SESSION_FROM_URL,
+      testMode: TEST_MODE,
     });
   };
 
@@ -265,6 +319,22 @@ function App() {
               Condition: {stage.condition}
             </Typography>
           </Box>
+          {TEST_MODE && (
+            <Box
+              sx={{
+                bgcolor: 'warning.main',
+                color: 'warning.contrastText',
+                px: 2,
+                py: 0.5,
+                borderRadius: 1,
+                fontWeight: 'bold',
+                fontSize: 14,
+                letterSpacing: 1,
+              }}
+            >
+              TEST MODE — data flagged, not for analysis
+            </Box>
+          )}
         </Box>
       </Box>
 
@@ -279,6 +349,7 @@ function App() {
               stage={stage}
               prolificId={prolificId}
               setProlificId={setProlificId}
+              prolificIdFromUrl={Boolean(PROLIFIC_ID_FROM_URL)}
               displayName={displayName}
               setDisplayName={setDisplayName}
               consentGiven={consentGiven}
@@ -302,6 +373,7 @@ function App() {
             <Box sx={{ height: '100%' }}>
               <ChatInterface
                 userName={displayName}
+                testMode={TEST_MODE}
                 conditionScripts={personalizeScripts(stage.allScripts ?? {}, displayName)}
                 onChatComplete={async (transcript, stage1Score, stage2Score) => {
                   await submitStage({

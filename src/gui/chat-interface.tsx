@@ -26,12 +26,14 @@ interface ChatMessage {
 interface ChatInterfaceProps {
   userName: string;
   conditionScripts: Record<string, BotScript[]>;
+  testMode?: boolean;
   onChatComplete: (transcript: ChatMessage[], stage1Score: number, stage2Score: number) => void;
 }
 
 export const ChatInterface = ({
   userName,
   conditionScripts,
+  testMode = false,
   onChatComplete,
 }: ChatInterfaceProps) => {
   // TOGGLE THIS TO TRUE TO RESTORE ASSESSMENTS LATER
@@ -212,8 +214,28 @@ export const ChatInterface = ({
           borderRadius: 2,
         }}
       >
-        <Box sx={{ p: 2, bgcolor: 'primary.main', color: 'primary.contrastText' }}>
+        <Box
+          sx={{
+            p: 2,
+            bgcolor: 'primary.main',
+            color: 'primary.contrastText',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 2,
+          }}
+        >
           <Typography variant="h6">Peer Support Chat</Typography>
+          {testMode && (
+            <Button
+              variant="contained"
+              color="warning"
+              size="small"
+              onClick={() => onChatComplete(messages, stage1Score ?? 0, stage2Score ?? 0)}
+            >
+              Skip chat
+            </Button>
+          )}
         </Box>
 
         <Box sx={{ flexGrow: 1, overflowY: 'auto', p: 3, bgcolor: '#f8f9fa' }}>

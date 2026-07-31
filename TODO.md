@@ -24,6 +24,30 @@ Deployment details, URLs and credentials are deliberately kept out of this file.
       them and a production install would skip them.
 - [x] Added `railway.json` so the frontend is served as a static bundle rather than by the CRA dev
       server.
+- [x] The Prolific ID is filled in automatically from the `PROLIFIC_PID` url parameter and shown
+      read-only, so participants cannot mistype it. `STUDY_ID` and `SESSION_ID` are captured too, so
+      submissions can be reconciled against Prolific's own export.
+- [x] Added a researcher test mode at `?test=true`. It pre-fills every field, shows a warning banner,
+      adds a "Skip chat" button, and flags the stored session with `test_mode: true`.
+
+## Test mode
+
+Use `?test=true` to walk the whole flow without answering anything. Combine it with the Prolific
+parameters if you want to check those too:
+
+```
+/?test=true
+/?PROLIFIC_PID=<id>&STUDY_ID=<id>&SESSION_ID=<id>
+```
+
+Every preset uses the lowest value on its scale, so test rows are recognisable in the data even if
+the flag is ever missed. Filter on `pre_survey_data.test_mode` when analysing.
+
+- [ ] **`?test=true` is not access-controlled.** Any participant who discovers it can skip the chat
+      and reach a valid completion code in seconds. Those sessions are flagged `test_mode: true`, so
+      they can be spotted and rejected on Prolific, but that is a manual process control rather than
+      a technical one. Decide whether that is acceptable before recruiting, since a build-time secret
+      would sit in the JavaScript bundle and not actually be secret.
 
 ## Blocking before recruitment
 
