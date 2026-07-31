@@ -133,6 +133,23 @@ func main() {
 		conditions = append(conditions, k)
 	}
 
+	// Refuse to start rather than run a different experiment than the operator
+	// thinks they are running. With mirroring on and no key, every request would
+	// quietly fall back to the fixed line and the whole sample would be the
+	// scripted study wearing the mirroring study's name.
+	mirrorEnabled, mirrorConfigured := mirrorSetting()
+	if !mirrorConfigured {
+		logger.Error("MIRROR_ENABLED is set to a value that cannot be read; " +
+			"use true or false, or leave it unset to keep mirroring on")
+		os.Exit(1)
+	}
+	if mirrorEnabled && os.Getenv("OPENROUTER_API_KEY") == "" {
+		logger.Error("mirroring is on but OPENROUTER_API_KEY is not set; " +
+			"set the key, or set MIRROR_ENABLED=false to run the scripted study deliberately")
+		os.Exit(1)
+	}
+	logger.Info("mirroring host configured", "enabled", mirrorEnabled, "model", mirrorModel)
+
 	dbPath := filepath.Join(dataDir, "sessions.db")
 	db, err := initDB(dbPath)
 	if err != nil {
@@ -154,6 +171,7 @@ func main() {
 	mux.HandleFunc("/api/stage", app.stageHandler)
 	mux.HandleFunc("/api/submit", app.submitHandler)
 	mux.HandleFunc("/api/export", app.exportHandler)
+	mux.HandleFunc("/api/mirror", app.mirrorHandler)
 
 	srv := &http.Server{
 		Addr:    ":" + port,
@@ -310,8 +328,20 @@ func (app *App) submitHandler(w http.ResponseWriter, r *http.Request) {
 
 	switch payload.CurrentState {
 	case "STATE_ONBOARDING":
+		// Merged over whatever the row already carries (the test_mode flag
+		// written at session creation) rather than replacing it, and written
+		// whether or not a Prolific id came through, so mirror_enabled is
+		// never missing from a row.
+		initialData := map[string]any{}
+		if len(session.PreSurveyData) > 0 {
+			json.Unmarshal(session.PreSurveyData, &initialData)
+		}
+		// If the kill switch is ever flipped mid-recruitment, the export says
+		// which participants had a mirroring host instead of leaving you to
+		// guess from timestamps.
+		initialData["mirror_enabled"] = mirroringOn()
 		if payload.ProlificID != "" {
-			initialData := map[string]any{"prolific_id": payload.ProlificID}
+			initialData["prolific_id"] = payload.ProlificID
 			if payload.DisplayName != "" {
 				initialData["display_name"] = payload.DisplayName
 			}
@@ -327,9 +357,9 @@ func (app *App) submitHandler(w http.ResponseWriter, r *http.Request) {
 			if payload.TestMode {
 				initialData["test_mode"] = true
 			}
-			data, _ := json.Marshal(initialData)
-			session.PreSurveyData = data
 		}
+		data, _ := json.Marshal(initialData)
+		session.PreSurveyData = data
 		session.CurrentState = StatePreSurvey
 
 	case "STATE_PRE_SURVEY":
@@ -340,7 +370,7 @@ func (app *App) submitHandler(w http.ResponseWriter, r *http.Request) {
 				json.Unmarshal(session.PreSurveyData, &existingData)
 				carryOver := []string{
 					"prolific_id", "display_name", "study_id",
-					"prolific_session_id", "test_mode",
+					"prolific_session_id", "test_mode", "mirror_enabled",
 				}
 				for _, key := range carryOver {
 					if value, ok := existingData[key]; ok {
