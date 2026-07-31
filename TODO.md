@@ -64,6 +64,17 @@ the flag is ever missed. Filter on `pre_survey_data.test_mode` when analysing.
 
 ## Blocking before recruitment
 
+- [ ] **Build the `/admin` route, then clear the database with it.** The database holds 28 development
+      and test rows that must be gone before recruiting, and there is currently no mechanism to delete
+      a row. Doing it by hand needs either an SSH key on the container or surgery on the Railway
+      volume, which is the wrong dependency for a routine research task. One authenticated page should
+      own inspection, per-row and filtered delete, the data export, recruitment progress, and health
+      telemetry, and should absorb `/test` so the condition list stops being served to anyone who
+      finds the URL. A full specification is written up in `docs/specs/` (local only, ask Simo).
+
+      The security property to hold onto: the frontend is a static bundle, so `/admin` is publicly
+      reachable whatever the React code does. Every admin endpoint has to authenticate on its own, and
+      the page is only a wrapper over endpoints that are already safe to call directly.
 - [ ] **Re-enable the between-stage comfort assessments.** `ENABLE_ASSESSMENTS` is `false` in
       `src/gui/chat-interface.tsx`, so the item never appears and both comfort scores are stored as
       `0`. Confirmed against the deployed backend. This is the only quantitative measure of change
