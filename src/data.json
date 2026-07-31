@@ -1,110 +1,199 @@
 {
   "conditions": {
     "1-1": {
-      "label": "Single bot",
+      "label": "Host only (no peer disclosure)",
       "stages": {
         "STATE_CHAT_STAGE_1": [
           {
             "sender": "Vieno",
-            "text": "Hi there! Thanks for chatting with me today. I find it helpful to start these by just checking in. For example, my typical day usually involves just trying to juggle a lot of small tasks. To get us started, what are the typical challenges you face in your daily professional or academic life?"
+            "tag": "open",
+            "text": "Hi [User's Name], thanks for joining today. I'm Vieno, and I'll be hosting this chat."
+          },
+          {
+            "sender": "Vieno",
+            "tag": "question",
+            "text": "Let's start with the everyday stuff. What are the typical challenges you face in your daily professional or academic life?"
+          },
+          {
+            "sender": "Vieno",
+            "tag": "ack",
+            "text": "Over to you, [User's Name]."
           }
         ],
         "STATE_CHAT_STAGE_2": [
           {
             "sender": "Vieno",
-            "text": "Thanks for sharing that. Honestly, for me, the biggest challenge lately is just the sheer volume of work. I had a moment last week where I felt completely burnt out, but I didn't want to tell my supervisor because I was afraid of looking incompetent. What about you, [User's Name]? Is there a specific moment recently where you felt overwhelmed by expectations but felt you couldn't share it?"
+            "tag": "question",
+            "text": "Let's go a bit deeper. Is there a specific moment recently where you felt overwhelmed by expectations but felt you couldn't share it?"
+          },
+          {
+            "sender": "Vieno",
+            "tag": "ack",
+            "text": "Take your time, [User's Name]."
           }
         ],
         "STATE_CHAT_STAGE_3": [
           {
             "sender": "Vieno",
-            "text": "It's exhausting to pretend everything is fine all the time. Sometimes I feel really isolated dealing with it. Reflecting on the struggles we just discussed, how do these pressures resonate with your own experiences, [User's Name]? Is there a specific professional challenge you feel comfortable sharing?"
+            "tag": "question",
+            "text": "We've covered a lot of ground. Is there a specific professional or academic challenge you'd feel comfortable going into?"
+          },
+          {
+            "sender": "Vieno",
+            "tag": "ack",
+            "text": "Over to you, [User's Name], whenever you're ready."
           }
         ]
       }
     },
     "2-1": {
-      "label": "Two bots",
+      "label": "Host and one disclosing peer",
       "stages": {
         "STATE_CHAT_STAGE_1": [
-          { "sender": "Vieno", "text": "Hi everyone! Thanks for joining this chat." },
-          { "sender": "Sam", "text": "Hey, glad to be here." },
           {
             "sender": "Vieno",
-            "text": "To get us started, I’d love to hear from you both: what are the typical challenges you face in your daily professional or academic life?"
+            "tag": "open",
+            "text": "Hi everyone, thanks for joining today. I'm Vieno, and I'll be hosting this chat."
           },
           {
             "sender": "Sam",
-            "text": "For me, it's mostly just trying to juggle a lot of small tasks every day."
+            "tag": "peer-neutral",
+            "text": "Hey, glad to be here."
           },
-          { "sender": "Vieno", "text": "Makes sense. How about you, [User's Name]?" }
+          {
+            "sender": "Vieno",
+            "tag": "question",
+            "text": "Let's start with the everyday stuff. What are the typical challenges you face in your daily professional or academic life?"
+          },
+          {
+            "sender": "Sam",
+            "tag": "peer-neutral",
+            "text": "For me it's mostly just juggling a lot of small tasks and keeping the calendar under control."
+          },
+          {
+            "sender": "Vieno",
+            "tag": "ack",
+            "text": "Thanks Sam. How about you, [User's Name]?"
+          }
         ],
         "STATE_CHAT_STAGE_2": [
           {
+            "sender": "Vieno",
+            "tag": "question",
+            "text": "Let's go a bit deeper. Is there a specific moment recently where you felt overwhelmed by expectations but felt you couldn't share it?"
+          },
+          {
             "sender": "Sam",
-            "text": "Honestly, for me, the biggest challenge lately is just the sheer volume of work. I had a moment last week where I felt completely burnt out, but I didn't want to tell my supervisor because I was afraid of looking incompetent."
+            "tag": "disclosure",
+            "text": "Honestly, the biggest thing for me lately is the sheer volume of work. I hit a wall last week and never said anything to my supervisor, because I was worried it would look like I can't handle the job."
           },
           {
             "sender": "Vieno",
-            "text": "I completely relate to that, Sam. The fear of professional judgment is real. What about you, [User's Name]? Is there a specific moment recently where you felt overwhelmed by expectations but felt you couldn't share it?"
+            "tag": "ack",
+            "text": "Thank you for being open about that, Sam. How about you, [User's Name]?"
           }
         ],
         "STATE_CHAT_STAGE_3": [
           {
+            "sender": "Vieno",
+            "tag": "question",
+            "text": "We've covered a lot of ground. Is there a specific professional or academic challenge you'd feel comfortable going into?"
+          },
+          {
             "sender": "Sam",
-            "text": "Hearing you talk today actually makes me feel a lot less isolated. It's exhausting to pretend everything is fine all the time."
+            "tag": "disclosure",
+            "text": "It's exhausting pretending everything is fine all the time. Talking about it like this actually makes me feel less alone with it."
           },
           {
             "sender": "Vieno",
-            "text": "I agree, Sam. Reflecting on the struggles we just discussed, how do these pressures resonate with your own experiences, [User's Name]? Is there a specific professional challenge you feel comfortable sharing with us?"
+            "tag": "ack",
+            "text": "Thank you, Sam. How about you, [User's Name]?"
           }
         ]
       }
     },
     "3-1": {
-      "label": "Three bots",
+      "label": "Host and two disclosing peers",
       "stages": {
         "STATE_CHAT_STAGE_1": [
-          { "sender": "Vieno", "text": "Hi everyone! Thanks for joining this chat." },
-          { "sender": "Sam", "text": "Hey, glad to be here." },
-          { "sender": "Charlie", "text": "Hi all!" },
           {
             "sender": "Vieno",
-            "text": "To get us started, I’d love to hear from the group: what are the typical challenges you face in your daily professional or academic life?"
+            "tag": "open",
+            "text": "Hi everyone, thanks for joining today. I'm Vieno, and I'll be hosting this chat."
           },
           {
             "sender": "Sam",
-            "text": "For me, it's mostly just trying to juggle a lot of small tasks every day."
-          },
-          { "sender": "Charlie", "text": "Same here, just trying to keep up with the schedule." },
-          { "sender": "Vieno", "text": "Thanks guys. How about you, [User's Name]?" }
-        ],
-        "STATE_CHAT_STAGE_2": [
-          {
-            "sender": "Sam",
-            "text": "Honestly, for me, the biggest challenge lately is just the sheer volume of work. I had a moment last week where I felt completely burnt out, but I didn't want to tell my supervisor because I was afraid of looking incompetent."
+            "tag": "peer-neutral",
+            "text": "Hey, glad to be here."
           },
           {
             "sender": "Charlie",
-            "text": "I completely relate to that, Sam. The fear of professional judgment is real. I constantly feel like I'm expected to know everything, so I just hide it when I'm struggling."
+            "tag": "peer-neutral",
+            "text": "Hi all."
           },
           {
             "sender": "Vieno",
-            "text": "Thank you both for being so open about that. What about you, [User's Name]? Is there a specific moment recently where you felt overwhelmed by expectations but felt you couldn't share it?"
+            "tag": "question",
+            "text": "Let's start with the everyday stuff. What are the typical challenges you face in your daily professional or academic life?"
+          },
+          {
+            "sender": "Sam",
+            "tag": "peer-neutral",
+            "text": "For me it's mostly just juggling a lot of small tasks."
+          },
+          {
+            "sender": "Charlie",
+            "tag": "peer-neutral",
+            "text": "Same, mostly keeping the calendar under control."
+          },
+          {
+            "sender": "Vieno",
+            "tag": "ack",
+            "text": "Thanks both. How about you, [User's Name]?"
+          }
+        ],
+        "STATE_CHAT_STAGE_2": [
+          {
+            "sender": "Vieno",
+            "tag": "question",
+            "text": "Let's go a bit deeper. Is there a specific moment recently where you felt overwhelmed by expectations but felt you couldn't share it?"
+          },
+          {
+            "sender": "Sam",
+            "tag": "disclosure",
+            "text": "Honestly, the biggest thing for me lately is the sheer volume of work. I hit a wall last week and never said anything to my supervisor."
+          },
+          {
+            "sender": "Charlie",
+            "tag": "disclosure",
+            "text": "Same here, and I keep quiet because it would look like I can't handle the job."
+          },
+          {
+            "sender": "Vieno",
+            "tag": "ack",
+            "text": "Thank you both for being open about that. How about you, [User's Name]?"
           }
         ],
         "STATE_CHAT_STAGE_3": [
           {
-            "sender": "Charlie",
-            "text": "Hearing everyone talk today actually makes me feel a lot less isolated. It's exhausting to pretend everything is fine all the time."
+            "sender": "Vieno",
+            "tag": "question",
+            "text": "We've covered a lot of ground. Is there a specific professional or academic challenge you'd feel comfortable going into?"
           },
           {
             "sender": "Sam",
-            "text": "Yeah, it really is."
+            "tag": "disclosure",
+            "text": "It's exhausting pretending everything is fine all the time."
+          },
+          {
+            "sender": "Charlie",
+            "tag": "disclosure",
+            "text": "Yeah. Talking about it like this actually makes me feel less alone with it."
           },
           {
             "sender": "Vieno",
-            "text": "I agree with you both. Reflecting on the struggles we just discussed as a group, how do these pressures resonate with your own experiences, [User's Name]? Is there a specific professional challenge you feel comfortable sharing with us?"
+            "tag": "ack",
+            "text": "Thank you both. How about you, [User's Name]?"
           }
         ]
       }
