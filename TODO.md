@@ -139,24 +139,32 @@ and this implementation disagree, are tracked there rather than in this file. As
       away from 60 each, and abandoned sessions make it worse because they still consume an assignment.
       Assigning whichever condition currently has the fewest completed sessions is a small backend
       change.
-- [ ] **Bot count is confounded with how much disclosure gets modelled.** Stage 2 carries one vulnerable
-      disclosure in the single-bot condition, two in the two-bot condition and three in the three-bot
-      condition. Stage 1 runs 1, 5 and 7 messages respectively. An effect therefore cannot be
-      attributed to several peers as opposed to simply more peer disclosure to read. Either equalise
-      the disclosure content and vary only who speaks it, or treat the manipulation as a composite and
-      say so in the limitations. Worth deciding deliberately rather than in response to review.
-- [ ] **Bots do not read what the participant writes.** The scripts are fixed, so a participant who
-      discloses nothing still gets replies referring to what they shared. This lands hardest on exactly
-      the guarded, deflecting participants the codebook is built to detect, and it is the most likely
-      way someone concludes the other members are not real. Consider a short neutral bridging line, or
-      accept it and watch for it in the qualitative responses.
+- [x] **Fixed: bot count was confounded with how much disclosure gets modelled.** The three cells now
+      share one non-disclosing host, and the disclosure content in the two peer cells is identical,
+      split across one speaker or two. The single-bot cell contains no peer disclosure at all and
+      serves as the baseline, so the design now tests whether peer modelling works before asking
+      whether the number of peers matters. Every stage also runs in the same order in every cell,
+      question then peers then hand-off, so the within-cell stage comparison is interpretable.
+      Invariants are enforced by `src/go/scripts_test.go`, which fails the build if the participant
+      question drifts between cells, if the disclosure volume stops matching within 10%, if the
+      baseline gains a disclosure, if the host discloses, or if a peer speaks before the question.
+
+      Message volume and time on task still rise with peer count, because a two-person conversation
+      has fewer turns than a group. Padding the host to equalise was rejected as it risks turning the
+      facilitator into a discloser. That residual belongs in the limitations.
+- [x] **Fixed: bots did not read what the participant writes.** The host now acknowledges each
+      participant message in one generated sentence, constrained to reflecting back only what was
+      written: no advice, no evaluation, no new topic, no question. It runs after stages 1 and 2 and
+      is on in every condition, so it does not interact with the manipulation. Any failure falls back
+      to a fixed line, and each host turn in the transcript is marked `generated` or `fallback` (or
+      carries no mark when it came from the script) so the three are separable when coding.
+      `MIRROR_ENABLED=false` stops it, and every session records which state it ran under.
 - [x] **Fixed: bot typing speed was about 300 words per minute**, roughly four times a realistic rate.
       Now `words * 350ms + 1s`, capped at 10s, with the three values as named constants at the top of
       `chat-interface.tsx`. That is about 170 wpm, fast for a person and still believable. The cap
-      stops the 68-word Vieno monologue in stage 2 of `1-1` from stalling the session for 25 seconds.
-      Total bot wait per session moves from 36 / 47 / 61s to 30 / 64 / 83s across `1-1` / `2-1` / `3-1`,
-      so this widens the time-on-task difference between conditions. Equalising the script content
-      across conditions fixes that and the disclosure-dose confound together.
+      stops a long message from stalling the session. The scripts have since been rewritten and are
+      much shorter, so the per-session waits quoted here no longer apply; the time-on-task difference
+      between conditions is now the residual noted under the disclosure-dose item above.
 - [x] **Fixed: participants could see their assigned condition.** The header rendered
       "Condition: 3-1" on every screen under the title "Multibot Research Prototype", so a participant
       could infer that the number of other members was the manipulation. The condition is now shown
