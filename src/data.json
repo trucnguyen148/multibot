@@ -18,7 +18,7 @@
         "STATE_CHAT_STAGE_3": [
           {
             "sender": "Vieno",
-            "text": "t's exhausting to pretend everything is fine all the time. Sometimes I feel really isolated dealing with it. Reflecting on the struggles we just discussed, how do these pressures resonate with your own experiences, [User's Name]? Is there a specific professional challenge you feel comfortable sharing?"
+            "text": "It's exhausting to pretend everything is fine all the time. Sometimes I feel really isolated dealing with it. Reflecting on the struggles we just discussed, how do these pressures resonate with your own experiences, [User's Name]? Is there a specific professional challenge you feel comfortable sharing?"
           }
         ]
       }
@@ -76,7 +76,7 @@
             "sender": "Sam",
             "text": "For me, it's mostly just trying to juggle a lot of small tasks every day."
           },
-          { "sender": "Charlie", "text": "Same here, just trying to keep up with the schedule" },
+          { "sender": "Charlie", "text": "Same here, just trying to keep up with the schedule." },
           { "sender": "Vieno", "text": "Thanks guys. How about you, [User's Name]?" }
         ],
         "STATE_CHAT_STAGE_2": [
