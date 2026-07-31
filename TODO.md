@@ -58,14 +58,17 @@ the flag is ever missed. Filter on `pre_survey_data.test_mode` when analysing.
       is already built, so this is a one-line change.
 - [ ] **Set `PROLIFIC_COMPLETION_CODE`.** It is still the placeholder `DEMO_CODE`, so participants
       cannot be credited.
-- [ ] **The condition quota counts every session row, not completed ones.** `randomCondition` now
-      balances across conditions and refuses new sessions once each has 60, which is a real
-      improvement. But a row is written by `/api/session/init` the moment someone loads the page, so
-      an abandoned page view permanently consumes a slot. The live database already shows this: 10
-      rows exist and only 2 reached `STATE_COMPLETE`. At that ratio the study would return
-      "Condition allocation is full" long before 180 people finish, and participants would then be
-      locked out mid-recruitment. Counting only `current_state = 'STATE_COMPLETE'` for the cap, and
-      excluding `test_mode` rows, would fix it. Worth resolving before recruiting.
+- [x] **Fixed: the condition quota counted every session row rather than completions.** A row is
+      written by `/api/session/init` the moment the page loads, so abandoned page views and
+      researcher test runs permanently consumed participant slots. The live database showed 10 rows
+      against 2 completions, which would have returned "Condition allocation is full" long before
+      180 people finished and locked out real participants mid-recruitment.
+
+      The allocator now separates the two questions it has to answer. Recruitment stops on
+      **completed** sessions per condition, so abandonment never reduces the achievable sample.
+      Assignment balances on **started** sessions, so people who are mid-study still push new
+      arrivals toward the emptier cells. Rows flagged `test_mode`, and rows still sitting at
+      onboarding, are excluded from both counts. Covered by tests in `main_test.go`.
 - [ ] **Decide whether the repository should be private.** `src/data.json` contains every bot turn.
       A participant who searches a distinctive phrase mid-study can read the whole script in advance.
       Making the repo private costs nothing and removes the problem. This is the owner's call, and it
@@ -93,10 +96,19 @@ test rows in that group so far, but do not mix them with real data.
 
 - [ ] Third bot is named `Taylor` in the design's Stage 1 table and `Charlie` everywhere else. The code
       uses `Charlie` throughout. Fix whichever is wrong.
-- [ ] The second open-ended item ("Did the responses from the other chat members influence what you
-      chose to share?") is not implemented. Only the first is. The design calls the qualitative section
-      the most important part precisely because the quantitative measures may show nothing, so this is
-      worth restoring.
+- [x] The second open-ended item ("Did the responses from the other chat members influence what you
+      chose to share? If so, how?") is now implemented as an optional field, `reflection_influence`.
+
+      The first item was also reworded. It previously read "What specifically about the chat
+      environment made you feel more (or less) comfortable sharing your experiences?", which
+      presupposed that the chat had changed their comfort. Since the field is required, anyone who
+      felt no effect had to invent one. It now reads "Did anything about the chat affect how
+      comfortable you felt sharing your experiences? If so, what? If it made no difference, please
+      say so", which makes "no effect" a valid and informative answer. That matters most for the
+      guarded participants the `SOC-DEFLECT` code is meant to capture.
+
+      Note for analysis: responses collected before this change may be inflated toward reporting an
+      effect. Only test rows exist so far.
 - [ ] The self-assessed Comfort and Depth items are struck through in the design, but the code
       implements Comfort and omits Depth. Either the strikethrough is stale or the code is.
 - [ ] Pre-interaction mood items and a human-AI trust measure appear as decisions in the design and are

@@ -30,6 +30,7 @@ const personalizeScripts = (
 const initialPreSurvey: SurveyResponse = {};
 const initialPostSurvey: SurveyResponse = {
   reflection: '',
+  reflection_influence: '',
 };
 
 // --- PROLIFIC URL PARAMETERS ---
@@ -75,6 +76,7 @@ const TEST_POST_SURVEY: SurveyResponse = {
   Self_Comfort: 1,
   offline_support: 'No',
   reflection: 'TEST MODE — placeholder, not a real response.',
+  reflection_influence: 'TEST MODE — placeholder, not a real response.',
 };
 
 // --- DYNAMIC API URL SETUP ---

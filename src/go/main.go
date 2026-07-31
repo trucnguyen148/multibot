@@ -83,8 +83,12 @@ type App struct {
 }
 
 const (
+	// Recruitment stops once every condition reaches this many *completed*
+	// sessions. Abandoned and test sessions do not count against it.
 	targetUsersPerCondition = 60
-	maximumUsers            = 180
+	// Derived total across the three conditions. Recorded for reference; the
+	// allocator enforces the per-condition target above, not this number.
+	maximumUsers = targetUsersPerCondition * 3
 )
 
 // --- Main Entry Point ---
@@ -404,54 +408,102 @@ func (app *App) exportHandler(w http.ResponseWriter, r *http.Request) {
 
 // --- Helpers ---
 
+// conditionTally separates the two questions the allocator has to answer.
+// Recruitment stops on completed sessions, so abandoned attempts never
+// permanently reduce the achievable sample. Balancing uses started sessions, so
+// people who are mid-study still spread new arrivals across the other cells.
+type conditionTally struct {
+	started   map[string]int
+	completed map[string]int
+}
+
+// isTestSession reports whether a row came from ?test=true. Those are researcher
+// walkthroughs and must not consume participant slots.
+func isTestSession(preSurveyData string) bool {
+	if preSurveyData == "" {
+		return false
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(preSurveyData), &parsed); err != nil {
+		return false
+	}
+	flag, _ := parsed["test_mode"].(bool)
+	return flag
+}
+
+func (app *App) tallyConditions() (conditionTally, error) {
+	tally := conditionTally{
+		started:   make(map[string]int, len(app.conditions)),
+		completed: make(map[string]int, len(app.conditions)),
+	}
+	for _, condition := range app.conditions {
+		tally.started[condition] = 0
+		tally.completed[condition] = 0
+	}
+
+	rows, err := app.db.Query(`SELECT condition, current_state, COALESCE(pre_survey_data, '') FROM sessions`)
+	if err != nil {
+		return tally, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var condition, currentState, preSurveyData string
+		if err := rows.Scan(&condition, &currentState, &preSurveyData); err != nil {
+			return tally, err
+		}
+		if _, known := tally.started[condition]; !known {
+			continue
+		}
+		if isTestSession(preSurveyData) {
+			continue
+		}
+		// A row is written the instant the page loads, so anyone still sitting
+		// at onboarding is a page view rather than a participant.
+		if SessionState(currentState) == StateOnboarding {
+			continue
+		}
+		tally.started[condition]++
+		if SessionState(currentState) == StateComplete {
+			tally.completed[condition]++
+		}
+	}
+	return tally, rows.Err()
+}
+
 func (app *App) randomCondition() (string, error) {
 	if len(app.conditions) == 0 {
 		return "1-1", nil
 	}
-	rows, err := app.db.Query(`SELECT condition FROM sessions`)
+	tally, err := app.tallyConditions()
 	if err != nil {
 		return "", err
 	}
-	defer rows.Close()
-
-	counts := make(map[string]int, len(app.conditions))
-	for _, condition := range app.conditions {
-		counts[condition] = 0
-	}
-
-	for rows.Next() {
-		var condition string
-		if err := rows.Scan(&condition); err != nil {
-			return "", err
-		}
-		if _, ok := counts[condition]; ok {
-			counts[condition]++
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return "", err
-	}
-
-	return app.selectCondition(counts)
+	return app.selectCondition(tally)
 }
 
-func (app *App) selectCondition(counts map[string]int) (string, error) {
+func (app *App) selectCondition(tally conditionTally) (string, error) {
 	if len(app.conditions) == 0 {
 		return "", fmt.Errorf("no conditions configured")
 	}
-	minCount := maximumUsers
+
+	minStarted := -1
 	candidates := make([]string, 0, len(app.conditions))
 	for _, condition := range app.conditions {
-		count := counts[condition]
+		// Skip cells that already have their full complement of completions.
+		if tally.completed[condition] >= targetUsersPerCondition {
+			continue
+		}
+		count := tally.started[condition]
 		switch {
-		case count < minCount:
-			minCount = count
+		case minStarted == -1 || count < minStarted:
+			minStarted = count
 			candidates = []string{condition}
-		case count == minCount:
+		case count == minStarted:
 			candidates = append(candidates, condition)
 		}
 	}
-	if minCount >= targetUsersPerCondition {
+	if len(candidates) == 0 {
 		return "", fmt.Errorf("condition allocation is full")
 	}
 	return candidates[rand.Intn(len(candidates))], nil

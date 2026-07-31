@@ -48,9 +48,23 @@ export const PostSurvey: React.FC<PostSurveyProps> = ({
   handlePostSurveySubmit,
 }) => {
   const isOfflineYes = postSurvey['offline_support'] === 'Yes';
-  const requiredItemCount = isOfflineYes ? 16 : 15;
-  const currentItemCount = Object.keys(postSurvey).filter((k) => postSurvey[k] !== '').length;
-  const isComplete = currentItemCount >= requiredItemCount;
+
+  // Checked by name rather than by counting filled keys. A count would let an
+  // answered optional item stand in for a missing required one.
+  const answered = (key: string): boolean => {
+    const value = postSurvey[key];
+    return value !== undefined && String(value).trim() !== '';
+  };
+
+  const requiredKeys = [
+    ...bfneItems.map((_, i) => `BFNE_${i + 1}`),
+    'Self_Comfort',
+    'offline_support',
+    'reflection',
+  ];
+
+  const isComplete =
+    requiredKeys.every(answered) && (!isOfflineYes || answered('offline_support_details'));
 
   return (
     <Paper elevation={2} sx={{ p: 4, borderRadius: 2 }}>
@@ -205,19 +219,38 @@ export const PostSurvey: React.FC<PostSurveyProps> = ({
                 <Typography variant="h6" gutterBottom color="primary">
                   Open-ended Reflection
                 </Typography>
+                {/* Phrased so that "it made no difference" is a valid answer.
+                    The earlier wording presupposed an effect, and because the
+                    field is required, anyone who felt none had to invent one. */}
                 <Typography variant="body1" sx={{ mb: 2 }}>
-                  What specifically about the chat environment made you feel more (or less)
-                  comfortable sharing your experiences?
+                  Did anything about the chat affect how comfortable you felt sharing your
+                  experiences? If so, what? If it made no difference, please say so.
                 </Typography>
                 <TextField
                   fullWidth
                   multiline
                   rows={4}
                   variant="outlined"
-                  placeholder="Type your reflection here..."
+                  placeholder="Type your answer here..."
                   value={(postSurvey['reflection'] as string) || ''}
                   onChange={(e) => handleSliderChange('post', 'reflection', e.target.value)}
                   required
+                />
+
+                <Typography variant="body1" sx={{ mt: 3, mb: 2 }}>
+                  Did the responses from the other chat members influence what you chose to share?
+                  If so, how? (Optional)
+                </Typography>
+                <TextField
+                  fullWidth
+                  multiline
+                  rows={4}
+                  variant="outlined"
+                  placeholder="Optional"
+                  value={(postSurvey['reflection_influence'] as string) || ''}
+                  onChange={(e) =>
+                    handleSliderChange('post', 'reflection_influence', e.target.value)
+                  }
                 />
               </Box>
             </Stack>
