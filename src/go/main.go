@@ -79,11 +79,6 @@ type StageConfig struct {
 	Title          string                 `json:"title"`
 	AllScripts     map[string][]BotScript `json:"allScripts,omitempty"`
 	CompletionCode string                 `json:"completionCode,omitempty"`
-	// MirrorEnabled tells the frontend whether to request a generated
-	// acknowledgement from the host after each participant message. Read from
-	// the environment on every response so the kill switch works without a
-	// rebuild.
-	MirrorEnabled bool `json:"mirrorEnabled"`
 }
 
 type experimentData struct {
@@ -143,22 +138,16 @@ func main() {
 		conditions = append(conditions, k)
 	}
 
-	// Refuse to start rather than run a different experiment than the operator
-	// thinks they are running. With mirroring on and no key, every request would
-	// quietly fall back to the fixed line and the whole sample would be the
-	// scripted study wearing the mirroring study's name.
-	mirrorEnabled, mirrorConfigured := mirrorSetting()
-	if !mirrorConfigured {
-		logger.Error("MIRROR_ENABLED is set to a value that cannot be read; " +
-			"use true or false, or leave it unset to keep mirroring on")
+	// The host acknowledging what the participant wrote is part of the design,
+	// not a feature that can be switched off, so the key it needs is simply
+	// required. Without it every acknowledgement would silently degrade to the
+	// fixed fallback line and the whole sample would be the scripted study
+	// wearing the mirroring study's name.
+	if os.Getenv("OPENROUTER_API_KEY") == "" {
+		logger.Error("OPENROUTER_API_KEY is not set; the host cannot acknowledge participant messages without it")
 		os.Exit(1)
 	}
-	if mirrorEnabled && os.Getenv("OPENROUTER_API_KEY") == "" {
-		logger.Error("mirroring is on but OPENROUTER_API_KEY is not set; " +
-			"set the key, or set MIRROR_ENABLED=false to run the scripted study deliberately")
-		os.Exit(1)
-	}
-	logger.Info("mirroring host configured", "enabled", mirrorEnabled, "model", mirrorModel)
+	logger.Info("mirroring host configured", "model", mirrorModel)
 
 	dbPath := filepath.Join(dataDir, "sessions.db")
 	db, err := initDB(dbPath)
@@ -339,17 +328,11 @@ func (app *App) submitHandler(w http.ResponseWriter, r *http.Request) {
 	switch payload.CurrentState {
 	case "STATE_ONBOARDING":
 		// Merged over whatever the row already carries (the test_mode flag
-		// written at session creation) rather than replacing it, and written
-		// whether or not a Prolific id came through, so mirror_enabled is
-		// never missing from a row.
+		// written at session creation) rather than replacing it.
 		initialData := map[string]any{}
 		if len(session.PreSurveyData) > 0 {
 			json.Unmarshal(session.PreSurveyData, &initialData)
 		}
-		// If the kill switch is ever flipped mid-recruitment, the export says
-		// which participants had a mirroring host instead of leaving you to
-		// guess from timestamps.
-		initialData["mirror_enabled"] = mirroringOn()
 		if payload.ProlificID != "" {
 			initialData["prolific_id"] = payload.ProlificID
 			if payload.DisplayName != "" {
@@ -380,7 +363,7 @@ func (app *App) submitHandler(w http.ResponseWriter, r *http.Request) {
 				json.Unmarshal(session.PreSurveyData, &existingData)
 				carryOver := []string{
 					"prolific_id", "display_name", "study_id",
-					"prolific_session_id", "test_mode", "mirror_enabled",
+					"prolific_session_id", "test_mode",
 				}
 				for _, key := range carryOver {
 					if value, ok := existingData[key]; ok {
@@ -607,9 +590,8 @@ func (app *App) selectCondition(tally conditionTally) (string, error) {
 
 func (app *App) buildStageResponse(session *Session) StageConfig {
 	response := StageConfig{
-		CurrentState:  string(session.CurrentState),
-		Condition:     session.Condition,
-		MirrorEnabled: mirroringOn(),
+		CurrentState: string(session.CurrentState),
+		Condition:    session.Condition,
 	}
 
 	switch SessionState(session.CurrentState) {
@@ -736,33 +718,6 @@ func isTruthy(value string) bool {
 	default:
 		return false
 	}
-}
-
-// mirrorSetting reports whether the host should acknowledge participant
-// messages, and whether MIRROR_ENABLED could be understood at all. The default
-// is on, because mirroring is part of the design rather than an optional extra.
-//
-// An unreadable value returns ok=false and main() refuses to start. Treating a
-// typo like MIRROR_ENABLED=ture as "off" would run the scripted study under the
-// mirroring study's name, which is the failure this whole switch is built to
-// avoid. An empty value is treated as unset for the same reason: a Railway
-// variable that exists but is blank must not silently disable the manipulation.
-func mirrorSetting() (enabled bool, ok bool) {
-	switch strings.ToLower(strings.TrimSpace(os.Getenv("MIRROR_ENABLED"))) {
-	case "":
-		return true, true
-	case "true", "1", "yes":
-		return true, true
-	case "false", "0", "no":
-		return false, true
-	default:
-		return true, false
-	}
-}
-
-func mirroringOn() bool {
-	enabled, _ := mirrorSetting()
-	return enabled
 }
 
 func getEnvOrDefault(key, fallback string) string {

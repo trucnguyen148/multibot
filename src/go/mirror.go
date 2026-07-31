@@ -16,9 +16,10 @@ import (
 // out, or returns something unusable. A participant must never see an error.
 const mirrorFallback = "Thanks for sharing that."
 
-// The generation parameters are study design, not tuning knobs. Changing the
-// model partway through recruitment splits the sample the same way flipping
-// MIRROR_ENABLED does, so they are constants rather than environment variables.
+// The generation parameters are study design rather than tuning knobs. Changing
+// the model partway through recruitment splits the sample into two studies, so
+// they are constants here instead of environment variables that could be edited
+// on a live deployment.
 const (
 	// OpenRouter speaks the OpenAI chat-completions shape, not Anthropic's
 	// /v1/messages, so `thinking` and `output_config.effort` do not exist here.
@@ -246,7 +247,7 @@ func (app *App) mirrorHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	text := clampMirrorInput(payload.Text)
-	if !mirroringOn() || text == "" {
+	if text == "" {
 		writeJSON(w, map[string]any{"text": mirrorFallback, "generated": false}, app.logger)
 		return
 	}

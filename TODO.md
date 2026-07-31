@@ -158,7 +158,8 @@ and this implementation disagree, are tracked there rather than in this file. As
       is on in every condition, so it does not interact with the manipulation. Any failure falls back
       to a fixed line, and each host turn in the transcript is marked `generated` or `fallback` (or
       carries no mark when it came from the script) so the three are separable when coding.
-      `MIRROR_ENABLED=false` stops it, and every session records which state it ran under.
+      There is deliberately no switch to turn it off, since the only thing such a switch could do is
+      change the manipulation partway through recruitment.
 - [x] **Fixed: bot typing speed was about 300 words per minute**, roughly four times a realistic rate.
       Now `words * 350ms + 1s`, capped at 10s, with the three values as named constants at the top of
       `chat-interface.tsx`. That is about 170 wpm, fast for a person and still believable. The cap

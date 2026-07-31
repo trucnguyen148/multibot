@@ -14,9 +14,6 @@ export interface StageConfig {
   title: string;
   allScripts?: Record<string, BotScript[]>;
   completionCode?: string;
-  // Absent from an older backend, which reads as false and yields the plain
-  // scripted chat.
-  mirrorEnabled?: boolean;
 }
 
 export interface SurveyResponse {

@@ -430,8 +430,10 @@ function App() {
                 userName={displayName}
                 testMode={TEST_MODE}
                 conditionScripts={personalizeScripts(stage.allScripts ?? {}, displayName)}
+                // Absent only when there is no server session at all, which is
+                // the offline fallback path where nothing is being saved anyway.
                 requestMirror={
-                  stage.mirrorEnabled && sessionId
+                  sessionId
                     ? (userText, chatStage) => requestMirror(sessionId, userText, chatStage)
                     : undefined
                 }
