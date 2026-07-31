@@ -7,7 +7,7 @@ import { PreSurvey } from './gui/pre-survey';
 import { OnBoarding } from './gui/onboarding';
 import { PostSurvey } from './gui/post-survey';
 import { CompleteScreen } from './gui/complete-screen';
-import { TestMenu } from './gui/test-menu';
+import { AdminPage } from './gui/admin';
 import { BotScript, ExperimentData, StageConfig, SurveyResponse } from './utils';
 
 const experimentData = fallbackExperimentData as ExperimentData;
@@ -61,10 +61,15 @@ const TEST_MODE = ['true', '1', 'yes'].includes(readParam('test').toLowerCase())
 // on its own does nothing.
 const CONDITION_FROM_URL = readParam('condition');
 
-// /test lists shortlinks into the flow. Matched on the pathname rather than with
-// a router, since `serve -s build` already rewrites unknown paths to index.html
-// and one page does not justify a routing dependency.
-const IS_TEST_MENU = window.location.pathname.replace(/\/+$/, '') === '/test';
+// /admin is everything a researcher does outside the participant flow. Matched
+// on the pathname rather than with a router, since `serve -s build` already
+// rewrites unknown paths to index.html and one page does not justify a routing
+// dependency. That rewrite is also why the page is publicly reachable. The
+// secret is checked by the API on every request rather than by this line.
+//
+// It replaced /test, whose menu is now a panel inside it. That page printed the
+// condition labels, which are the manipulation, to anyone who found the path.
+const IS_ADMIN = window.location.pathname.replace(/\/+$/, '') === '/admin';
 
 const buildScaleDefaults = (prefix: string, count: number, value: number): SurveyResponse => {
   const filled: SurveyResponse = {};
@@ -470,8 +475,8 @@ function App() {
 const root = ReactDOM.createRoot(document.getElementById('root') as HTMLElement);
 root.render(
   <React.StrictMode>
-    {/* Rendered instead of App, so opening the menu does not create a session
-        row that then sits abandoned at onboarding. */}
-    {IS_TEST_MENU ? <TestMenu data={experimentData} apiBaseUrl={API_BASE_URL} /> : <App />}
+    {/* Rendered instead of App, so opening the admin page does not create a
+        session row that then sits abandoned at onboarding. */}
+    {IS_ADMIN ? <AdminPage data={experimentData} apiBaseUrl={API_BASE_URL} /> : <App />}
   </React.StrictMode>
 );

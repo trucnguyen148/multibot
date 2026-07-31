@@ -171,6 +171,7 @@ func main() {
 	mux.HandleFunc("/api/submit", app.submitHandler)
 	mux.HandleFunc("/api/export", app.exportHandler)
 	mux.HandleFunc("/api/mirror", app.mirrorHandler)
+	app.registerAdminRoutes(mux)
 
 	srv := &http.Server{
 		Addr:    ":" + port,
@@ -204,8 +205,11 @@ func main() {
 func (app *App) withCORS(next http.Handler, allowedOrigin string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		// DELETE and X-Admin-Secret are both here for /api/admin. Omitting
+		// either fails the preflight, and the failure only shows up in the
+		// browser: curl skips preflight entirely and works regardless.
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Admin-Secret")
 
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
@@ -415,10 +419,9 @@ func (app *App) submitHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (app *App) exportHandler(w http.ResponseWriter, r *http.Request) {
-	secret := r.URL.Query().Get("secret")
-	expectedSecret := os.Getenv("EXPORT_SECRET")
-
-	if expectedSecret == "" || secret != expectedSecret {
+	// Shares the constant-time comparison in admin.go rather than reimplementing
+	// it. This endpoint stays for scripts; /admin is the human path.
+	if !secretMatches(adminSecret(), presentedSecret(r)) {
 		app.logger.Warn("unauthorized export attempt", "ip", r.RemoteAddr)
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
@@ -642,6 +645,14 @@ func initDB(path string) (*sql.DB, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Added later than the table, so existing volumes need the ALTER. Without a
+	// second timestamp there is no way to say how long a session took, since
+	// created_at is written the instant the page loads. Rows that predate the
+	// column keep a NULL and are simply left out of the duration figures.
+	if _, err := db.Exec(`ALTER TABLE sessions ADD COLUMN updated_at TEXT`); err != nil &&
+		!strings.Contains(err.Error(), "duplicate column name") {
+		return nil, err
+	}
 	return db, nil
 }
 
@@ -649,9 +660,10 @@ func saveSession(db *sql.DB, session *Session) error {
 	chatTranscript, _ := json.Marshal(session.ChatTranscript)
 	preSurveyData := string(session.PreSurveyData)
 	postSurveyData := string(session.PostSurveyData)
+	updatedAt := time.Now().UTC().Format(time.RFC3339Nano)
 	_, err := db.Exec(`
-        INSERT INTO sessions (user_id, condition, current_state, pre_survey_data, chat_transcript, stage_1_comfort_score, stage_2_comfort_score, post_survey_data, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO sessions (user_id, condition, current_state, pre_survey_data, chat_transcript, stage_1_comfort_score, stage_2_comfort_score, post_survey_data, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(user_id) DO UPDATE SET
             condition=excluded.condition,
             current_state=excluded.current_state,
@@ -660,8 +672,9 @@ func saveSession(db *sql.DB, session *Session) error {
             stage_1_comfort_score=excluded.stage_1_comfort_score,
             stage_2_comfort_score=excluded.stage_2_comfort_score,
             post_survey_data=excluded.post_survey_data,
-            created_at=excluded.created_at
-    `, session.UserID, session.Condition, session.CurrentState, preSurveyData, chatTranscript, session.Stage1ComfortScore, session.Stage2ComfortScore, postSurveyData, session.CreatedAt.Format(time.RFC3339Nano))
+            created_at=excluded.created_at,
+            updated_at=excluded.updated_at
+    `, session.UserID, session.Condition, session.CurrentState, preSurveyData, chatTranscript, session.Stage1ComfortScore, session.Stage2ComfortScore, postSurveyData, session.CreatedAt.Format(time.RFC3339Nano), updatedAt)
 	return err
 }
 

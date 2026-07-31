@@ -32,15 +32,18 @@ Deployment details, URLs and credentials are deliberately kept out of this file.
 
 ## Test mode
 
-Open `/test` for a menu of shortlinks into the flow, one per condition, plus a live backend health
-check. That last part matters because the participant flow falls back to local state on any backend
-failure and still reaches a completion code, so a run that looks fine in the browser proves nothing
-about whether anything was saved.
+Open `/admin` and use the "Walk the study" tab for shortlinks into the flow, one per condition, plus
+a live backend health check. That last part matters because the participant flow falls back to local
+state on any backend failure and still reaches a completion code, so a run that looks fine in the
+browser proves nothing about whether anything was saved.
+
+The tab replaced the old `/test` page, which served the condition list to anyone who found the URL.
+The condition labels describe the manipulation, so they now sit behind the admin secret.
 
 The underlying urls, if you prefer to type them:
 
 ```
-/test                                    researcher menu, creates no session
+/admin                                   researcher page, creates no session, asks for the secret
 /?test=true                              test mode, condition assigned at random
 /?test=true&condition=2-1                test mode, forced condition
 /?PROLIFIC_PID=<id>&STUDY_ID=<id>&SESSION_ID=<id>
@@ -64,17 +67,19 @@ the flag is ever missed. Filter on `pre_survey_data.test_mode` when analysing.
 
 ## Blocking before recruitment
 
-- [ ] **Build the `/admin` route, then clear the database with it.** The database holds 28 development
-      and test rows that must be gone before recruiting, and there is currently no mechanism to delete
-      a row. Doing it by hand needs either an SSH key on the container or surgery on the Railway
-      volume, which is the wrong dependency for a routine research task. One authenticated page should
-      own inspection, per-row and filtered delete, the data export, recruitment progress, and health
-      telemetry, and should absorb `/test` so the condition list stops being served to anyone who
-      finds the URL. A full specification is written up in `docs/specs/` (local only, ask Simo).
+- [ ] **Clear the 28 development and test rows from the production database.** The `/admin` route
+      that makes this possible is now built (below), so this is a five-minute job. Export first, then
+      use the "Export and delete" tab. Nothing in those rows is a real participant.
+- [x] **Built the `/admin` route.** One authenticated page owns inspection, per-row and filtered
+      delete, the data export, recruitment progress, and mirror health, and it absorbed `/test` so
+      the condition list is no longer served to anyone who finds the URL. Spec in `docs/specs/`
+      (local only, ask Simo).
 
-      The security property to hold onto: the frontend is a static bundle, so `/admin` is publicly
-      reachable whatever the React code does. Every admin endpoint has to authenticate on its own, and
-      the page is only a wrapper over endpoints that are already safe to call directly.
+      The security property it holds to. The frontend is a static bundle, so `/admin` is publicly
+      reachable whatever the React code does. Every `/api/admin/*` endpoint therefore authenticates
+      on its own request against `EXPORT_SECRET`, in constant time, denying everything when the
+      variable is unset. Loading the page without the secret fires no API call at all, so no
+      participant data reaches the browser. Verified with `curl` per endpoint and in a browser.
 - [ ] **Re-enable the between-stage comfort assessments.** `ENABLE_ASSESSMENTS` is `false` in
       `src/gui/chat-interface.tsx`, so the item never appears and both comfort scores are stored as
       `0`. Confirmed against the deployed backend. This is the only quantitative measure of change
@@ -207,5 +212,6 @@ and this implementation disagree, are tracked there rather than in this file. As
 - [x] The two `react-hooks/exhaustive-deps` warnings were fixed in `a274cae`, so `npm run build` now
       passes with `CI=true`. The `CI=false` variable on the frontend service is no longer required and
       can be removed, though leaving it costs nothing and guards against the warnings returning.
-- [ ] There are no automated tests on either side. The practical smoke test is walking the state machine
-      with curl, since the frontend masks server errors.
+- [ ] The frontend has no automated tests. The Go side has them (`main_test.go`, `scripts_test.go`,
+      `mirror_test.go`, `admin_test.go`), run with `go test ./...` from `src/go`. For the frontend the
+      practical smoke test is still walking the state machine with curl, since it masks server errors.
