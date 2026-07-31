@@ -69,6 +69,11 @@ type StageConfig struct {
 	Title          string                 `json:"title"`
 	AllScripts     map[string][]BotScript `json:"allScripts,omitempty"`
 	CompletionCode string                 `json:"completionCode,omitempty"`
+	// MirrorEnabled tells the frontend whether to request a generated
+	// acknowledgement from the host after each participant message. Read from
+	// the environment on every response so the kill switch works without a
+	// rebuild.
+	MirrorEnabled bool `json:"mirrorEnabled"`
 }
 
 type experimentData struct {
@@ -562,8 +567,9 @@ func (app *App) selectCondition(tally conditionTally) (string, error) {
 
 func (app *App) buildStageResponse(session *Session) StageConfig {
 	response := StageConfig{
-		CurrentState: string(session.CurrentState),
-		Condition:    session.Condition,
+		CurrentState:  string(session.CurrentState),
+		Condition:     session.Condition,
+		MirrorEnabled: mirroringOn(),
 	}
 
 	switch SessionState(session.CurrentState) {
@@ -690,6 +696,33 @@ func isTruthy(value string) bool {
 	default:
 		return false
 	}
+}
+
+// mirrorSetting reports whether the host should acknowledge participant
+// messages, and whether MIRROR_ENABLED could be understood at all. The default
+// is on, because mirroring is part of the design rather than an optional extra.
+//
+// An unreadable value returns ok=false and main() refuses to start. Treating a
+// typo like MIRROR_ENABLED=ture as "off" would run the scripted study under the
+// mirroring study's name, which is the failure this whole switch is built to
+// avoid. An empty value is treated as unset for the same reason: a Railway
+// variable that exists but is blank must not silently disable the manipulation.
+func mirrorSetting() (enabled bool, ok bool) {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("MIRROR_ENABLED"))) {
+	case "":
+		return true, true
+	case "true", "1", "yes":
+		return true, true
+	case "false", "0", "no":
+		return false, true
+	default:
+		return true, false
+	}
+}
+
+func mirroringOn() bool {
+	enabled, _ := mirrorSetting()
+	return enabled
 }
 
 func getEnvOrDefault(key, fallback string) string {

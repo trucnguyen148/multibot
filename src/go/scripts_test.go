@@ -165,6 +165,64 @@ func TestDisclosureNeverPrecedesTheQuestion(t *testing.T) {
 	}
 }
 
+// Mirroring is part of the design, so the absence of configuration means on.
+// An operator has to opt out deliberately, and when they do it is recorded per
+// session (see mirror.go) so the data says which study each participant ran.
+func TestMirroringDefaultsToOn(t *testing.T) {
+	app := &App{}
+	stage := func() StageConfig {
+		return app.buildStageResponse(&Session{CurrentState: StateInteraction})
+	}
+
+	// t.Setenv cannot unset, and an empty value has to behave like unset
+	// anyway: an empty Railway variable must not silently disable mirroring.
+	t.Setenv("MIRROR_ENABLED", "")
+	if !stage().MirrorEnabled {
+		t.Error("mirroring must default to on when MIRROR_ENABLED is empty or unset")
+	}
+
+	t.Setenv("MIRROR_ENABLED", "false")
+	if stage().MirrorEnabled {
+		t.Error("mirroring must be off when MIRROR_ENABLED is explicitly false")
+	}
+
+	t.Setenv("MIRROR_ENABLED", "true")
+	if !stage().MirrorEnabled {
+		t.Error("mirroring must be on when MIRROR_ENABLED is true")
+	}
+}
+
+// A typo like MIRROR_ENABLED=ture must not read as "off". Silently running the
+// scripted study under the mirroring study's name is the exact hazard the
+// startup guard exists to prevent, so an unreadable value is reported as such
+// and main() refuses to start.
+func TestMirrorSettingRejectsAnUnrecognisedValue(t *testing.T) {
+	cases := map[string]struct {
+		enabled bool
+		ok      bool
+	}{
+		"":      {enabled: true, ok: true},
+		"true":  {enabled: true, ok: true},
+		"YES":   {enabled: true, ok: true},
+		"1":     {enabled: true, ok: true},
+		"false": {enabled: false, ok: true},
+		"no":    {enabled: false, ok: true},
+		"0":     {enabled: false, ok: true},
+		"ture":  {enabled: true, ok: false},
+		"off":   {enabled: true, ok: false},
+	}
+	for value, want := range cases {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv("MIRROR_ENABLED", value)
+			enabled, ok := mirrorSetting()
+			if enabled != want.enabled || ok != want.ok {
+				t.Errorf("mirrorSetting() with %q = (%v, %v), want (%v, %v)",
+					value, enabled, ok, want.enabled, want.ok)
+			}
+		})
+	}
+}
+
 // Every turn carries a tag from the known set. An untagged turn silently opts
 // out of every invariant above, which is the failure mode these tests exist to
 // prevent.
