@@ -11,16 +11,21 @@ import AssessmentIcon from '@mui/icons-material/Assessment';
 // 300 wpm, four times a realistic rate, and was the most obvious tell that the
 // other chat members were scripted.
 //
-// The cap stops the longest scripted message (the 68-word Vieno monologue in
-// stage 2 of condition 1-1) from stalling the session for 25 seconds. Anything
-// past roughly ten seconds of "typing..." reads as a stall rather than as care.
+// The cap stops a long message from stalling the session. Anything past roughly
+// ten seconds of "typing..." reads as a stall rather than as care.
 const MS_PER_WORD = 350;
 const BASE_DELAY_MS = 1000;
 const MAX_DELAY_MS = 10000;
 
+const typingDelayFor = (text: string): number => {
+  const wordCount = text.split(/\s+/).filter((word) => word.length > 0).length;
+  return Math.min(wordCount * MS_PER_WORD + BASE_DELAY_MS, MAX_DELAY_MS);
+};
+
 interface BotScript {
   sender: string;
   text: string;
+  tag?: string;
 }
 
 interface ChatMessage {
@@ -34,12 +39,29 @@ interface ChatMessage {
   isUser?: boolean;
   isAssessment?: boolean;
   assessmentScore?: number;
+  // Present only on a host turn produced at runtime. Lets the export tell
+  // generated text from script, and a real acknowledgement from a timed-out
+  // one, when the transcripts are coded.
+  mirror?: 'generated' | 'fallback';
+}
+
+// What the host says when the backend cannot be reached at all. The backend has
+// its own copy of this line for when generation fails on its side; this one only
+// covers the network never getting there.
+const MIRROR_FALLBACK = 'Thanks for sharing that.';
+
+interface MirrorReply {
+  text: string;
+  generated: boolean;
 }
 
 interface ChatInterfaceProps {
   userName: string;
   conditionScripts: Record<string, BotScript[]>;
   testMode?: boolean;
+  // Supplied only when the server reports mirroring is on. When absent, the
+  // host says nothing between the participant's message and the next stage.
+  requestMirror?: (userText: string, stage: string) => Promise<MirrorReply>;
   onChatComplete: (transcript: ChatMessage[], stage1Score: number, stage2Score: number) => void;
 }
 
@@ -47,6 +69,7 @@ export const ChatInterface = ({
   userName,
   conditionScripts,
   testMode = false,
+  requestMirror,
   onChatComplete,
 }: ChatInterfaceProps) => {
   // TOGGLE THIS TO TRUE TO RESTORE ASSESSMENTS LATER
@@ -92,10 +115,7 @@ export const ChatInterface = ({
         setIsTyping(true);
         setTypingBot(script.sender);
 
-        const wordCount = script.text.split(/\s+/).filter((word) => word.length > 0).length;
-        const delay = Math.min(wordCount * MS_PER_WORD + BASE_DELAY_MS, MAX_DELAY_MS);
-
-        await new Promise<void>((resolve) => setTimeout(resolve, delay));
+        await new Promise<void>((resolve) => setTimeout(resolve, typingDelayFor(script.text)));
 
         if (isCancelled) return;
 
@@ -125,7 +145,47 @@ export const ChatInterface = ({
     };
   }, [conditionScripts, internalStage]);
 
-  const handleUserSubmit = () => {
+  // Plays the host's acknowledgement of what the participant just wrote, then
+  // resolves so the caller can advance the stage. Never throws: a failure here
+  // must not strand a participant mid-study.
+  const playMirror = async (userText: string, stage: string): Promise<void> => {
+    if (!requestMirror) return;
+
+    const startedAt = Date.now();
+    setIsTyping(true);
+    setTypingBot('Vieno');
+
+    let reply: MirrorReply = { text: MIRROR_FALLBACK, generated: false };
+    try {
+      reply = await requestMirror(userText, stage);
+    } catch {
+      // Keep the fallback.
+    }
+
+    // Hold the reply until it has been "typed" at the same rate as every
+    // scripted turn, counting the time the request already took. Without this
+    // the host answers several times faster than she says anything else, which
+    // is the most obvious tell that this one turn is machine generated.
+    const remaining = typingDelayFor(reply.text) - (Date.now() - startedAt);
+    if (remaining > 0) {
+      await new Promise<void>((resolve) => setTimeout(resolve, remaining));
+    }
+
+    setIsTyping(false);
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        sender: 'Vieno',
+        text: reply.text,
+        timestamp: new Date().toISOString(),
+        stage,
+        mirror: reply.generated ? 'generated' : 'fallback',
+      },
+    ]);
+  };
+
+  const handleUserSubmit = async () => {
     if (!inputValue.trim()) return;
 
     const userMsg: ChatMessage = {
@@ -153,7 +213,7 @@ export const ChatInterface = ({
         };
         setTimeout(() => setMessages((prev) => [...prev, assessmentMsg]), 500);
       } else {
-        // Skip assessment and move directly to stage 2
+        await playMirror(userMsg.text, internalStage);
         setInternalStage('STATE_CHAT_STAGE_2');
       }
     } else if (internalStage === 'STATE_CHAT_STAGE_2') {
@@ -168,9 +228,14 @@ export const ChatInterface = ({
         };
         setTimeout(() => setMessages((prev) => [...prev, assessmentMsg]), 500);
       } else {
-        // Skip assessment and move directly to stage 3
+        await playMirror(userMsg.text, internalStage);
         setInternalStage('STATE_CHAT_STAGE_3');
       }
+      // Stage 3 deliberately gets no mirror. The closing line already
+      // acknowledges, and the final transcript is assembled below as
+      // [...messages, userMsg, closingMsg] because `messages` is stale inside
+      // that closure, so a mirror added here would be dropped from the saved
+      // transcript without any visible sign.
     } else if (internalStage === 'STATE_CHAT_STAGE_3') {
       setInternalStage('STATE_CLOSING');
 
@@ -388,7 +453,7 @@ export const ChatInterface = ({
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
-                  handleUserSubmit();
+                  void handleUserSubmit();
                 }
               }}
               size="small"
@@ -397,7 +462,7 @@ export const ChatInterface = ({
             />
             <IconButton
               color="primary"
-              onClick={handleUserSubmit}
+              onClick={() => void handleUserSubmit()}
               disabled={!awaitingUser || !inputValue.trim()}
               sx={{ alignSelf: 'flex-end' }}
             >

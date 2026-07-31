@@ -1,0 +1,20 @@
+# `railway up` uploads the working tree rather than a git archive, so anything
+# kept out of the repo through .git/info/exclude is still uploaded unless it is
+# named here. CLAUDE.md holds the production export secret and .env.local holds
+# the OpenRouter key, so both are excluded from the build context of both
+# services.
+
+.env
+.env.*
+
+CLAUDE.md
+CLAUDE.local.md
+*.local.md
+
+docs/
+exports/
+.scholark/
+.playwright-mcp/
+
+node_modules/
+build/

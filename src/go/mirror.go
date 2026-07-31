@@ -28,7 +28,14 @@ const (
 	mirrorMaxTokens = 100
 	// Beyond this the chat stalls; fall back rather than leave the participant
 	// watching "Vieno is typing..." indefinitely.
-	mirrorTimeout = 4 * time.Second
+	//
+	// Measured round trip is around 2.7s, so 4s left little headroom under load
+	// and a timeout costs real data: the participant silently gets the fixed
+	// line instead of an acknowledgement. The frontend holds every reply for the
+	// same word-count typing delay it uses for scripted turns, which for a
+	// typical acknowledgement is 5 to 7 seconds, so anything inside this budget
+	// is hidden behind the typing indicator and costs the participant nothing.
+	mirrorTimeout = 6 * time.Second
 	// A chat message cannot legitimately be book length. Trimming bounds both
 	// what is sent to a third party and what it costs.
 	maxMirrorInputChars = 4000

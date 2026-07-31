@@ -40,6 +40,16 @@ type ChatMessage struct {
 	IsUser          bool      `json:"isUser,omitempty"`
 	IsAssessment    bool      `json:"isAssessment,omitempty"`
 	AssessmentScore *int      `json:"assessmentScore,omitempty"`
+	// Mirror marks a host turn produced at runtime rather than read from the
+	// script: "generated" when the model answered, "fallback" when it did not
+	// and the fixed line was used. Absent on every scripted turn.
+	//
+	// Without this the export cannot separate generated text from script when
+	// the transcripts are coded, and cannot tell a real acknowledgement from a
+	// timed-out one. The field has to exist here as well as in the frontend
+	// because the transcript is unmarshalled into this struct, so an unknown
+	// key would be silently discarded on the way into the database.
+	Mirror string `json:"mirror,omitempty"`
 }
 
 type Session struct {

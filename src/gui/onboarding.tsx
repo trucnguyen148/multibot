@@ -114,6 +114,16 @@ export const OnBoarding: React.FC<OnBoardingProps> = ({
                 you are over 18 years of age, and you consent to your anonymized data being used for
                 academic research purposes. You may withdraw at any time.
               </Typography>
+              {/* The chat host composes its replies with a third-party AI
+                  service, so what a participant writes leaves our servers.
+                  Consent has to say so. Keep this in step with MIRROR_ENABLED
+                  on the backend: if mirroring is ever turned off for good, this
+                  sentence stops being true. */}
+              <Typography variant="body2" sx={{ mt: 1.5 }}>
+                During the group chat, the messages you write are sent to a third-party AI service
+                so that the host can reply to them. Please do not include information that could
+                identify you or anyone else.
+              </Typography>
             </Paper>
             <FormControlLabel
               control={

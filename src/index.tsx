@@ -109,6 +109,28 @@ if (!isLocal && !API_BASE_URL) {
   );
 }
 
+// Asks the host for an acknowledgement of what the participant just wrote. The
+// backend already falls back to a fixed line on any generation failure, so this
+// only has to survive the network layer. `generated` is carried through to the
+// transcript so the export can tell a real acknowledgement from a fallback.
+const requestMirror = async (
+  sessionId: string,
+  userText: string,
+  stage: string
+): Promise<{ text: string; generated: boolean }> => {
+  const response = await fetch(`${API_BASE_URL}/api/mirror`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sessionId, stage, text: userText }),
+  });
+  if (!response.ok) throw new Error('mirror unavailable');
+  const payload = await response.json();
+  return {
+    text: typeof payload.text === 'string' ? payload.text : 'Thanks for sharing that.',
+    generated: payload.generated === true,
+  };
+};
+
 function App() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [stage, setStage] = useState<StageConfig | null>(null);
@@ -408,6 +430,11 @@ function App() {
                 userName={displayName}
                 testMode={TEST_MODE}
                 conditionScripts={personalizeScripts(stage.allScripts ?? {}, displayName)}
+                requestMirror={
+                  stage.mirrorEnabled && sessionId
+                    ? (userText, chatStage) => requestMirror(sessionId, userText, chatStage)
+                    : undefined
+                }
                 onChatComplete={async (transcript, stage1Score, stage2Score) => {
                   await submitStage({
                     currentState: 'STATE_INTERACTION',
