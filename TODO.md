@@ -58,29 +58,36 @@ the flag is ever missed. Filter on `pre_survey_data.test_mode` when analysing.
       is already built, so this is a one-line change.
 - [ ] **Set `PROLIFIC_COMPLETION_CODE`.** It is still the placeholder `DEMO_CODE`, so participants
       cannot be credited.
+- [ ] **The condition quota counts every session row, not completed ones.** `randomCondition` now
+      balances across conditions and refuses new sessions once each has 60, which is a real
+      improvement. But a row is written by `/api/session/init` the moment someone loads the page, so
+      an abandoned page view permanently consumes a slot. The live database already shows this: 10
+      rows exist and only 2 reached `STATE_COMPLETE`. At that ratio the study would return
+      "Condition allocation is full" long before 180 people finish, and participants would then be
+      locked out mid-recruitment. Counting only `current_state = 'STATE_COMPLETE'` for the cap, and
+      excluding `test_mode` rows, would fix it. Worth resolving before recruiting.
 - [ ] **Decide whether the repository should be private.** `src/data.json` contains every bot turn.
       A participant who searches a distinctive phrase mid-study can read the whole script in advance.
       Making the repo private costs nothing and removes the problem. This is the owner's call, and it
       also governs how much study detail belongs in this file.
 
-## Scoring correctness
+## Scoring
 
-All three verified against the running backend, not read off the source.
+Server-side reverse-scoring was stripped in `b3fe1dd`, so **every response is now stored raw**. That
+resolves the earlier problem where BFNE was reversed, AIAS silently was not, and the stored value gave
+no way to tell which convention applied to a given row.
 
-- [ ] **AIAS is never reverse-scored.** `reverseScoreMap` targets items 10 to 13, which are the
-      correct indices in the original 13-item scale, but the survey renumbers the four Risks items as
-      `AIAS_1..4`. Nothing matches, so it silently does nothing. Submitting `AIAS_1 = 1` stores `1`.
-      The design states these items must be reverse-scored.
-- [ ] **DDI is never reverse-scored.** Items 2, 4, 5, 8, 9 and 12 are reverse-worded, both in the
-      standard instrument and in the wording used here. No reversal is applied. The design lists the
-      items but never states the reverse set, so this needs a decision recorded before it is coded.
-- [ ] **Consider storing raw responses and reversing at analysis time.** Reversal currently happens in
-      place and overwrites the participant's answer, so a stored `5` does not reveal whether they
-      answered 5 or answered 1 and were flipped. Because BFNE is reversed and AIAS is not, one dataset
-      already mixes both conventions with nothing marking which is which. Storing raw also makes the
-      two items above harmless, since scoring stays revisable after collection.
+The consequence is that all reversal now belongs in the analysis script, and none of it is done for
+you:
 
-BFNE is correct, for the record. Items 2, 4, 7 and 10 reverse as intended.
+- [ ] BFNE items 2, 4, 7 and 10 need reversing.
+- [ ] AIAS is the Risks factor of the 13-item scale, renumbered `AIAS_1..4` in the survey. The design
+      states all four are negatively worded and must be reversed.
+- [ ] DDI items 2, 4, 5, 8, 9 and 12 are reverse-worded. The design lists the items but never states
+      the reverse set, so record the decision somewhere before analysis.
+
+Rows collected before `b3fe1dd` had BFNE reversed at write time and AIAS untouched. There are only
+test rows in that group so far, but do not mix them with real data.
 
 ## Mismatches between the design document and the code
 
@@ -138,8 +145,8 @@ BFNE is correct, for the record. Items 2, 4, 7 and 10 reverse as intended.
       collection, at the cost of showing an error to whoever hits it.
 - [ ] `REACT_APP_BACKEND_URL` is compiled into the bundle, so changing it needs a rebuild rather than a
       restart. Easy to forget when moving environments.
-- [ ] Two ESLint warnings (`react-hooks/exhaustive-deps`) mean `CI=false` has to be set for the
-      frontend build, because `react-scripts build` treats warnings as errors when `CI` is truthy.
-      Fixing the warnings would remove the need for that variable.
+- [x] The two `react-hooks/exhaustive-deps` warnings were fixed in `a274cae`, so `npm run build` now
+      passes with `CI=true`. The `CI=false` variable on the frontend service is no longer required and
+      can be removed, though leaving it costs nothing and guards against the warnings returning.
 - [ ] There are no automated tests on either side. The practical smoke test is walking the state machine
       with curl, since the frontend masks server errors.
