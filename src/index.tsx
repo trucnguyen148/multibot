@@ -86,11 +86,12 @@ const buildScaleDefaults = (prefix: string, count: number, value: number): Surve
 };
 
 // Must cover every key the surveys count, or their submit buttons stay disabled.
-// Pre-survey needs 21 keys, post-survey needs 15.
+// Pre-survey needs 22 keys, post-survey needs 15.
 const TEST_PRE_SURVEY: SurveyResponse = {
   ...buildScaleDefaults('DDI', 12, 1),
   ...buildScaleDefaults('SSRPH', 5, 0),
   ...buildScaleDefaults('AIAS', 4, 1),
+  Self_Comfort_Pre: 1,
 };
 
 const TEST_POST_SURVEY: SurveyResponse = {
@@ -469,12 +470,13 @@ function App() {
                     ? (userText, chatStage) => requestMirror(sessionId, userText, chatStage)
                     : undefined
                 }
-                onChatComplete={async (transcript, stage1Score, stage2Score) => {
+                onChatComplete={async (transcript, stage1Score, stage2Score, stage3Score) => {
                   await submitStage({
                     currentState: 'STATE_INTERACTION',
                     chatTranscript: transcript,
                     stage1ComfortScore: stage1Score,
                     stage2ComfortScore: stage2Score,
+                    stage3ComfortScore: stage3Score,
                   });
                 }}
               />

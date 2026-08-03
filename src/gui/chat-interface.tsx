@@ -62,7 +62,12 @@ interface ChatInterfaceProps {
   // Supplied only when the server reports mirroring is on. When absent, the
   // host says nothing between the participant's message and the next stage.
   requestMirror?: (userText: string, stage: string) => Promise<MirrorReply>;
-  onChatComplete: (transcript: ChatMessage[], stage1Score: number, stage2Score: number) => void;
+  onChatComplete: (
+    transcript: ChatMessage[],
+    stage1Score: number,
+    stage2Score: number,
+    stage3Score: number
+  ) => void;
 }
 
 export const ChatInterface = ({
@@ -72,22 +77,32 @@ export const ChatInterface = ({
   requestMirror,
   onChatComplete,
 }: ChatInterfaceProps) => {
-  // TOGGLE THIS TO TRUE TO RESTORE ASSESSMENTS LATER
-  const ENABLE_ASSESSMENTS = false;
-
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isTyping, setIsTyping] = useState<boolean>(false);
   const [typingBot, setTypingBot] = useState<string | null>(null);
 
   const [internalStage, setInternalStage] = useState<string>('STATE_CHAT_STAGE_1');
+  // The repeated within-subjects measure, one per stage on the same 1 to 7 scale
+  // as the post-survey Self_Comfort item, so the three in-session points and the
+  // retrospective one can be read together. There was no stage 3 check-in until
+  // 2026-08-03, which left the Late stage with no comfort measure at all.
   const [stage1Score, setStage1Score] = useState<number | null>(null);
   const [stage2Score, setStage2Score] = useState<number | null>(null);
+  const [stage3Score, setStage3Score] = useState<number | null>(null);
 
   const [awaitingUser, setAwaitingUser] = useState<boolean>(false);
   const [inputValue, setInputValue] = useState<string>('');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const stageStartedRef = useRef<Record<string, boolean>>({});
+  // The submitted transcript is assembled from this rather than from `messages`,
+  // which is stale inside the timeout that fires the closing line. Turns added
+  // late (the host acknowledgement, the check-ins) would otherwise be dropped
+  // from the saved transcript with nothing visible to show for it.
+  const messagesRef = useRef<ChatMessage[]>([]);
+  // Same reason as messagesRef. The stage 3 rating is set and used within one
+  // event, so state has not committed by the time the closing timeout reads it.
+  const latestStage3Ref = useRef<number>(0);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -95,6 +110,7 @@ export const ChatInterface = ({
 
   useEffect(() => {
     scrollToBottom();
+    messagesRef.current = messages;
   }, [messages, isTyping]);
 
   useEffect(() => {
@@ -201,64 +217,69 @@ export const ChatInterface = ({
     setInputValue('');
     setAwaitingUser(false);
 
-    if (internalStage === 'STATE_CHAT_STAGE_1') {
-      if (ENABLE_ASSESSMENTS) {
-        const assessmentMsg: ChatMessage = {
-          id: crypto.randomUUID(),
-          sender: 'System',
-          text: 'Assessment',
-          timestamp: new Date().toISOString(),
-          stage: internalStage,
-          isAssessment: true,
-        };
-        setTimeout(() => setMessages((prev) => [...prev, assessmentMsg]), 500);
-      } else {
-        await playMirror(userMsg.text, internalStage);
-        setInternalStage('STATE_CHAT_STAGE_2');
-      }
-    } else if (internalStage === 'STATE_CHAT_STAGE_2') {
-      if (ENABLE_ASSESSMENTS) {
-        const assessmentMsg: ChatMessage = {
-          id: crypto.randomUUID(),
-          sender: 'System',
-          text: 'Assessment',
-          timestamp: new Date().toISOString(),
-          stage: internalStage,
-          isAssessment: true,
-        };
-        setTimeout(() => setMessages((prev) => [...prev, assessmentMsg]), 500);
-      } else {
-        await playMirror(userMsg.text, internalStage);
-        setInternalStage('STATE_CHAT_STAGE_3');
-      }
-      // Stage 3 deliberately gets no mirror. The closing line already
-      // acknowledges, and the final transcript is assembled below as
-      // [...messages, userMsg, closingMsg] because `messages` is stale inside
-      // that closure, so a mirror added here would be dropped from the saved
-      // transcript without any visible sign.
+    // Stages 1 and 2 run the host acknowledgement first and the check-in after,
+    // so the comfort rating is taken with the same conversational context in
+    // place in every condition. An earlier version treated the two as
+    // alternatives, which would have removed the acknowledgement from the
+    // manipulation the moment the check-ins were switched on.
+    if (internalStage === 'STATE_CHAT_STAGE_1' || internalStage === 'STATE_CHAT_STAGE_2') {
+      await playMirror(userMsg.text, internalStage);
+      askForComfort(internalStage);
     } else if (internalStage === 'STATE_CHAT_STAGE_3') {
-      setInternalStage('STATE_CLOSING');
-
-      setIsTyping(true);
-      setTypingBot('Vieno');
-
-      setTimeout(() => {
-        setIsTyping(false);
-        const closingMsg: ChatMessage = {
-          id: crypto.randomUUID(),
-          sender: 'Vieno',
-          text: 'Thanks so much for sharing that. This concludes our session today!',
-          timestamp: new Date().toISOString(),
-          stage: 'STATE_CLOSING',
-        };
-        setMessages((prev) => [...prev, closingMsg]);
-
-        setTimeout(() => {
-          const finalTranscript = [...messages, userMsg, closingMsg];
-          onChatComplete(finalTranscript, stage1Score || 0, stage2Score || 0);
-        }, 2500);
-      }, 1500);
+      // Stage 3 gets no acknowledgement, since the closing line already serves
+      // that purpose. The check-in comes first so the Late stage is rated before
+      // the session visibly ends.
+      askForComfort(internalStage);
     }
+  };
+
+  // The check-in is a normal transcript entry, so the rating and its position in
+  // the conversation are both preserved in the export.
+  const askForComfort = (stage: string) => {
+    const assessmentMsg: ChatMessage = {
+      id: crypto.randomUUID(),
+      sender: 'System',
+      text: 'Comfort check-in',
+      timestamp: new Date().toISOString(),
+      stage,
+      isAssessment: true,
+    };
+    setTimeout(() => setMessages((prev) => [...prev, assessmentMsg]), 500);
+  };
+
+  const finishChat = () => {
+    setInternalStage('STATE_CLOSING');
+    setIsTyping(true);
+    setTypingBot('Vieno');
+
+    setTimeout(() => {
+      setIsTyping(false);
+      const closingMsg: ChatMessage = {
+        id: crypto.randomUUID(),
+        sender: 'Vieno',
+        text: 'Thanks so much for sharing that. This concludes our session today!',
+        timestamp: new Date().toISOString(),
+        stage: 'STATE_CLOSING',
+      };
+      setMessages((prev) => [...prev, closingMsg]);
+      setTimeout(() => {
+        // The ref has caught up with the closing line by now, so appending it
+        // again would store it twice. Matching on id keeps this correct whether
+        // or not the render has landed.
+        const latest = messagesRef.current;
+        const finalTranscript = latest.some((message) => message.id === closingMsg.id)
+          ? latest
+          : [...latest, closingMsg];
+        onChatComplete(
+          finalTranscript,
+          stage1Score || 0,
+          stage2Score || 0,
+          // Read off the click rather than the state, which has not committed
+          // yet on the render that scheduled this.
+          latestStage3Ref.current || 0
+        );
+      }, 2500);
+    }, 1500);
   };
 
   const handleAssessmentSubmit = (msgId: string, score: number) => {
@@ -272,6 +293,10 @@ export const ChatInterface = ({
     } else if (internalStage === 'STATE_CHAT_STAGE_2') {
       setStage2Score(score);
       setInternalStage('STATE_CHAT_STAGE_3');
+    } else if (internalStage === 'STATE_CHAT_STAGE_3') {
+      setStage3Score(score);
+      latestStage3Ref.current = score;
+      finishChat();
     }
   };
 
@@ -309,7 +334,9 @@ export const ChatInterface = ({
               variant="contained"
               color="warning"
               size="small"
-              onClick={() => onChatComplete(messages, stage1Score ?? 0, stage2Score ?? 0)}
+              onClick={() =>
+                onChatComplete(messages, stage1Score ?? 0, stage2Score ?? 0, stage3Score ?? 0)
+              }
             >
               Skip chat
             </Button>
@@ -321,7 +348,6 @@ export const ChatInterface = ({
             const isUser = msg.isUser === true;
 
             if (msg.isAssessment) {
-              if (!ENABLE_ASSESSMENTS) return null;
               const isAnswered = msg.assessmentScore !== undefined;
               return (
                 <Box key={msg.id} sx={{ display: 'flex', justifyContent: 'center', my: 3 }}>
@@ -357,11 +383,22 @@ export const ChatInterface = ({
                     </Typography>
                     {isAnswered ? (
                       <Typography variant="h6" sx={{ color: 'success.main', mt: 1 }}>
-                        Score: {msg.assessmentScore} / 5
+                        Score: {msg.assessmentScore} / 7
                       </Typography>
                     ) : (
-                      <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1, mt: 2 }}>
-                        {[1, 2, 3, 4, 5].map((score) => (
+                      <Box
+                        sx={{
+                          display: 'flex',
+                          justifyContent: 'center',
+                          alignItems: 'center',
+                          gap: 1,
+                          mt: 2,
+                        }}
+                      >
+                        <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                          Not at all
+                        </Typography>
+                        {[1, 2, 3, 4, 5, 6, 7].map((score) => (
                           <Button
                             key={score}
                             variant="outlined"
@@ -371,6 +408,9 @@ export const ChatInterface = ({
                             {score}
                           </Button>
                         ))}
+                        <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                          Extremely
+                        </Typography>
                       </Box>
                     )}
                   </Paper>

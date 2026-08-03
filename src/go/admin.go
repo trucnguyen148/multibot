@@ -93,6 +93,12 @@ func metricsFor(raw string) transcriptMetrics {
 		return metrics
 	}
 	for _, message := range transcript {
+		// The comfort check-ins are stored as transcript entries so the rating
+		// keeps its place in the conversation. They are not conversational
+		// turns, so counting them would inflate every row by three.
+		if message.IsAssessment {
+			continue
+		}
 		metrics.Turns++
 		if message.IsUser {
 			words := len(strings.Fields(message.Text))

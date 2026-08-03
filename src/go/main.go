@@ -60,6 +60,7 @@ type Session struct {
 	ChatTranscript     []ChatMessage   `json:"chat_transcript"`
 	Stage1ComfortScore *int            `json:"stage_1_comfort_score"`
 	Stage2ComfortScore *int            `json:"stage_2_comfort_score"`
+	Stage3ComfortScore *int            `json:"stage_3_comfort_score"`
 	PostSurveyData     json.RawMessage `json:"post_survey_data"`
 	CreatedAt          time.Time       `json:"created_at"`
 }
@@ -333,6 +334,7 @@ func (app *App) submitHandler(w http.ResponseWriter, r *http.Request) {
 		ChatTranscript     []ChatMessage  `json:"chatTranscript"`
 		Stage1ComfortScore *int           `json:"stage1ComfortScore"`
 		Stage2ComfortScore *int           `json:"stage2ComfortScore"`
+		Stage3ComfortScore *int           `json:"stage3ComfortScore"`
 		PostSurveyData     map[string]any `json:"postSurveyData"`
 	}
 
@@ -410,6 +412,7 @@ func (app *App) submitHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		session.Stage1ComfortScore = payload.Stage1ComfortScore
 		session.Stage2ComfortScore = payload.Stage2ComfortScore
+		session.Stage3ComfortScore = payload.Stage3ComfortScore
 		session.CurrentState = "STATE_POST_SURVEY"
 
 	case "STATE_POST_SURVEY":
@@ -447,7 +450,7 @@ func (app *App) exportHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := app.db.Query(`SELECT user_id, condition, current_state, pre_survey_data, chat_transcript, stage_1_comfort_score, stage_2_comfort_score, post_survey_data, created_at FROM sessions`)
+	rows, err := app.db.Query(`SELECT user_id, condition, current_state, pre_survey_data, chat_transcript, stage_1_comfort_score, stage_2_comfort_score, stage_3_comfort_score, post_survey_data, created_at FROM sessions`)
 	if err != nil {
 		app.logger.Error("failed to query sessions for export", "error", err)
 		http.Error(w, "Database error", http.StatusInternalServerError)
@@ -459,8 +462,8 @@ func (app *App) exportHandler(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var s Session
 		var pre, chat, post, created string
-		var s1, s2 sql.NullInt64
-		if err := rows.Scan(&s.UserID, &s.Condition, &s.CurrentState, &pre, &chat, &s1, &s2, &post, &created); err != nil {
+		var s1, s2, s3 sql.NullInt64
+		if err := rows.Scan(&s.UserID, &s.Condition, &s.CurrentState, &pre, &chat, &s1, &s2, &s3, &post, &created); err != nil {
 			continue
 		}
 		if pre != "" {
@@ -479,6 +482,10 @@ func (app *App) exportHandler(w http.ResponseWriter, r *http.Request) {
 		if s2.Valid {
 			val := int(s2.Int64)
 			s.Stage2ComfortScore = &val
+		}
+		if s3.Valid {
+			val := int(s3.Int64)
+			s.Stage3ComfortScore = &val
 		}
 		if parsed, err := time.Parse(time.RFC3339Nano, created); err == nil {
 			s.CreatedAt = parsed
@@ -694,9 +701,21 @@ func initDB(path string) (*sql.DB, error) {
 	// second timestamp there is no way to say how long a session took, since
 	// created_at is written the instant the page loads. Rows that predate the
 	// column keep a NULL and are simply left out of the duration figures.
-	if _, err := db.Exec(`ALTER TABLE sessions ADD COLUMN updated_at TEXT`); err != nil &&
-		!strings.Contains(err.Error(), "duplicate column name") {
-		return nil, err
+	// Added after the table existed, so an existing volume needs the ALTER. Each
+	// is idempotent, since the service reruns this on every restart.
+	migrations := []string{
+		// Without a second timestamp there is no way to say how long a session
+		// took, since created_at is written the instant the page loads.
+		`ALTER TABLE sessions ADD COLUMN updated_at TEXT`,
+		// The stage 3 comfort check-in, added 2026-08-03. Rows collected before
+		// then have no Late-stage reading at all, not a zero.
+		`ALTER TABLE sessions ADD COLUMN stage_3_comfort_score INTEGER`,
+	}
+	for _, statement := range migrations {
+		if _, err := db.Exec(statement); err != nil &&
+			!strings.Contains(err.Error(), "duplicate column name") {
+			return nil, err
+		}
 	}
 	return db, nil
 }
@@ -707,8 +726,8 @@ func saveSession(db *sql.DB, session *Session) error {
 	postSurveyData := string(session.PostSurveyData)
 	updatedAt := time.Now().UTC().Format(time.RFC3339Nano)
 	_, err := db.Exec(`
-        INSERT INTO sessions (user_id, condition, current_state, pre_survey_data, chat_transcript, stage_1_comfort_score, stage_2_comfort_score, post_survey_data, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO sessions (user_id, condition, current_state, pre_survey_data, chat_transcript, stage_1_comfort_score, stage_2_comfort_score, stage_3_comfort_score, post_survey_data, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(user_id) DO UPDATE SET
             condition=excluded.condition,
             current_state=excluded.current_state,
@@ -716,21 +735,22 @@ func saveSession(db *sql.DB, session *Session) error {
             chat_transcript=excluded.chat_transcript,
             stage_1_comfort_score=excluded.stage_1_comfort_score,
             stage_2_comfort_score=excluded.stage_2_comfort_score,
+            stage_3_comfort_score=excluded.stage_3_comfort_score,
             post_survey_data=excluded.post_survey_data,
             created_at=excluded.created_at,
             updated_at=excluded.updated_at
-    `, session.UserID, session.Condition, session.CurrentState, preSurveyData, chatTranscript, session.Stage1ComfortScore, session.Stage2ComfortScore, postSurveyData, session.CreatedAt.Format(time.RFC3339Nano), updatedAt)
+    `, session.UserID, session.Condition, session.CurrentState, preSurveyData, chatTranscript, session.Stage1ComfortScore, session.Stage2ComfortScore, session.Stage3ComfortScore, postSurveyData, session.CreatedAt.Format(time.RFC3339Nano), updatedAt)
 	return err
 }
 
 func loadSession(db *sql.DB, userID string) (*Session, error) {
 	var session Session
 	var preSurveyData, chatTranscript, postSurveyData, createdAt string
-	var stage1Score, stage2Score sql.NullInt64
+	var stage1Score, stage2Score, stage3Score sql.NullInt64
 	err := db.QueryRow(`
-        SELECT user_id, condition, current_state, pre_survey_data, chat_transcript, stage_1_comfort_score, stage_2_comfort_score, post_survey_data, created_at
+        SELECT user_id, condition, current_state, pre_survey_data, chat_transcript, stage_1_comfort_score, stage_2_comfort_score, stage_3_comfort_score, post_survey_data, created_at
         FROM sessions WHERE user_id = ?
-    `, userID).Scan(&session.UserID, &session.Condition, &session.CurrentState, &preSurveyData, &chatTranscript, &stage1Score, &stage2Score, &postSurveyData, &createdAt)
+    `, userID).Scan(&session.UserID, &session.Condition, &session.CurrentState, &preSurveyData, &chatTranscript, &stage1Score, &stage2Score, &stage3Score, &postSurveyData, &createdAt)
 	if err != nil {
 		return nil, err
 	}
@@ -750,6 +770,10 @@ func loadSession(db *sql.DB, userID string) (*Session, error) {
 	if stage2Score.Valid {
 		value := int(stage2Score.Int64)
 		session.Stage2ComfortScore = &value
+	}
+	if stage3Score.Valid {
+		value := int(stage3Score.Int64)
+		session.Stage3ComfortScore = &value
 	}
 	if createdAt != "" {
 		parsed, err := time.Parse(time.RFC3339Nano, createdAt)

@@ -80,11 +80,15 @@ the flag is ever missed. Filter on `pre_survey_data.test_mode` when analysing.
       on its own request against `EXPORT_SECRET`, in constant time, denying everything when the
       variable is unset. Loading the page without the secret fires no API call at all, so no
       participant data reaches the browser. Verified with `curl` per endpoint and in a browser.
-- [ ] **Re-enable the between-stage comfort assessments.** `ENABLE_ASSESSMENTS` is `false` in
-      `src/gui/chat-interface.tsx`, so the item never appears and both comfort scores are stored as
-      `0`. Confirmed against the deployed backend. This is the only quantitative measure of change
-      across stages, so the within-subjects half of the design currently has no data behind it. The UI
-      is already built, so this is a one-line change.
+- [x] **Enabled the comfort measure, and extended it.** `ENABLE_ASSESSMENTS` is gone. The check-in now
+      runs after every stage rather than after the first two, so the Late stage has a reading, and a
+      condition-blind baseline (`Self_Comfort_Pre`) was added at the end of the pre-survey, before the
+      participant has met the bots. All five points use the same 1 to 7 scale as the post-survey
+      `Self_Comfort` item, so the trajectory can be read as one series. The flag was removed rather
+      than set to `true`, because toggling it mid-recruitment would leave two datasets in one table.
+
+      Note for analysis: the baseline asks what people *expect* to feel and the rest ask what they
+      *do* feel, so the first interval is partly a shift from anticipation to experience.
 - [ ] **Set `PROLIFIC_COMPLETION_CODE`.** It is still the placeholder `DEMO_CODE`, so participants
       cannot be credited.
 - [x] **Fixed: the condition quota counted every session row rather than completions.** A row is

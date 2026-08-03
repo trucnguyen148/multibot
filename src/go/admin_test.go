@@ -112,6 +112,23 @@ func TestMetricsForCountsParticipantWordsAndMirrorTurns(t *testing.T) {
 	}
 }
 
+func TestMetricsForIgnoresComfortCheckIns(t *testing.T) {
+	// Check-ins ride in the transcript so the rating keeps its position in the
+	// conversation, but they are not turns anyone took.
+	withCheckIn := `[
+      {"sender":"Vieno","text":"How has the week been?","stage":"STATE_CHAT_STAGE_1"},
+      {"sender":"You","text":"one two three","stage":"STATE_CHAT_STAGE_1","isUser":true},
+      {"sender":"System","text":"Comfort check-in","stage":"STATE_CHAT_STAGE_1","isAssessment":true,"assessmentScore":5}
+    ]`
+	metrics := metricsFor(withCheckIn)
+	if metrics.Turns != 2 {
+		t.Fatalf("Turns = %d, want 2 with the check-in excluded", metrics.Turns)
+	}
+	if metrics.ParticipantWords != 3 {
+		t.Fatalf("ParticipantWords = %d, want 3", metrics.ParticipantWords)
+	}
+}
+
 func TestMetricsForToleratesEmptyAndMalformedTranscripts(t *testing.T) {
 	for _, raw := range []string{"", "   ", "not json", "null"} {
 		metrics := metricsFor(raw)
