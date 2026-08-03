@@ -21,6 +21,7 @@ import {
   SessionDetail,
   SessionSummary,
   deleteSession,
+  deleteSessions,
   downloadExport,
   fetchSession,
   fetchSessions,
@@ -35,11 +36,23 @@ import { TestLinksPanel } from './test-links-panel';
 
 const SECRET_STORAGE_KEY = 'multibot-admin-secret';
 
-// sessionStorage rather than localStorage, so closing the tab forgets the
-// secret. A shared research laptop should not stay logged in.
+// localStorage, so the secret survives closing the tab and restarting the
+// browser. This was sessionStorage first, on the reasoning that a shared
+// research laptop should not stay logged in, and was changed on Simo's request
+// because re-entering it every time made the page annoying enough to avoid.
+//
+// The trade-off is real and worth knowing. Anyone with access to this browser
+// profile can now open /admin and read or delete every transcript. The Lock
+// button clears it, and rotating EXPORT_SECRET invalidates it everywhere.
 const readStoredSecret = (): string => {
   try {
-    return window.sessionStorage.getItem(SECRET_STORAGE_KEY) ?? '';
+    return (
+      window.localStorage.getItem(SECRET_STORAGE_KEY) ??
+      // Carried over from the sessionStorage era so an already-open tab is not
+      // logged out by this change.
+      window.sessionStorage.getItem(SECRET_STORAGE_KEY) ??
+      ''
+    );
   } catch {
     return '';
   }
@@ -47,18 +60,22 @@ const readStoredSecret = (): string => {
 
 const storeSecret = (secret: string) => {
   try {
-    if (secret) window.sessionStorage.setItem(SECRET_STORAGE_KEY, secret);
-    else window.sessionStorage.removeItem(SECRET_STORAGE_KEY);
+    if (secret) {
+      window.localStorage.setItem(SECRET_STORAGE_KEY, secret);
+    } else {
+      window.localStorage.removeItem(SECRET_STORAGE_KEY);
+      window.sessionStorage.removeItem(SECRET_STORAGE_KEY);
+    }
   } catch {
     // Private browsing with storage disabled. The secret still works for this
     // render; it just will not survive a reload.
   }
 };
 
-// /admin?secret=… is the convenient way in. The secret moves straight into
-// sessionStorage and is stripped from the address bar, so it does not sit in
-// browser history or get shoulder-read off the URL bar. It never travels to the
-// API this way, since those calls use the X-Admin-Secret header.
+// /admin?secret=… is the convenient way in the first time. The secret moves
+// straight into storage and is stripped from the address bar, so it does not sit
+// in browser history or get shoulder-read off the URL bar. It never travels to
+// the API this way, since those calls use the X-Admin-Secret header.
 const takeSecretFromUrl = (): string => {
   const params = new URLSearchParams(window.location.search);
   const secret = params.get('secret') ?? '';
@@ -171,6 +188,39 @@ export const AdminPage: React.FC<AdminPageProps> = ({ data, apiBaseUrl }) => {
     }
   };
 
+  const removeSelected = async (rows: SessionSummary[]) => {
+    const realRows = rows.filter((row) => !row.test_mode);
+    const confirmed = window.confirm(
+      `Permanently delete ${rows.length} session(s)?\n\n` +
+        (realRows.length > 0
+          ? `${realRows.length} of them are NOT flagged as test walkthroughs:\n` +
+            realRows
+              .slice(0, 8)
+              .map((row) => `  ${row.prolific_id || row.user_id} (${row.current_state})`)
+              .join('\n') +
+            (realRows.length > 8 ? `\n  and ${realRows.length - 8} more` : '') +
+            '\n\n'
+          : 'All of them are flagged as test walkthroughs.\n\n') +
+        'There is no undo.'
+    );
+    if (!confirmed) return;
+
+    setBusy(true);
+    try {
+      const result = await deleteSessions(
+        apiBaseUrl,
+        secret,
+        rows.map((row) => row.user_id)
+      );
+      setNotice(`Deleted ${result.deleted} row(s).`);
+      await refresh();
+    } catch (failure) {
+      handleFailure(failure);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const purge = async (scope: PurgeScope) => {
     setBusy(true);
     try {
@@ -238,8 +288,9 @@ export const AdminPage: React.FC<AdminPageProps> = ({ data, apiBaseUrl }) => {
               </Stack>
             </form>
             <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 3 }}>
-              This is <code>EXPORT_SECRET</code>. <code>/admin?secret=…</code> also works; the value
-              is moved into session storage and removed from the address bar on arrival.
+              This is <code>EXPORT_SECRET</code>. <code>/admin?secret=…</code> also works, and the
+              value is moved into browser storage and removed from the address bar on arrival. It is
+              remembered on this browser until you press Lock, so you only enter it once.
             </Typography>
           </Paper>
         </Container>
@@ -274,6 +325,7 @@ export const AdminPage: React.FC<AdminPageProps> = ({ data, apiBaseUrl }) => {
               <Button
                 size="small"
                 color="inherit"
+                title="Forget the secret on this browser"
                 onClick={() => {
                   storeSecret('');
                   setSecret('');
@@ -308,7 +360,13 @@ export const AdminPage: React.FC<AdminPageProps> = ({ data, apiBaseUrl }) => {
           ))}
 
         {tab === 1 && (
-          <SessionsPanel sessions={sessions} onInspect={inspect} onDelete={removeOne} busy={busy} />
+          <SessionsPanel
+            sessions={sessions}
+            onInspect={inspect}
+            onDelete={removeOne}
+            onDeleteSelected={removeSelected}
+            busy={busy}
+          />
         )}
 
         {tab === 2 && (

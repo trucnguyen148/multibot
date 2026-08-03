@@ -114,6 +114,14 @@ export const deleteSession = (apiBaseUrl: string | undefined, secret: string, id
     method: 'DELETE',
   }).then(() => undefined);
 
+// One transaction on the server, so a hand-picked selection either goes or does
+// not, rather than half-clearing if a row is missing.
+export const deleteSessions = (apiBaseUrl: string | undefined, secret: string, ids: string[]) =>
+  requestJSON<{ deleted: number }>(apiBaseUrl, secret, '/api/admin/sessions/delete', {
+    method: 'POST',
+    body: JSON.stringify({ ids }),
+  });
+
 export const purgeSessions = (apiBaseUrl: string | undefined, secret: string, scope: PurgeScope) =>
   requestJSON<{ deleted: number; scope: string }>(apiBaseUrl, secret, '/api/admin/purge', {
     method: 'POST',

@@ -319,6 +319,59 @@ func TestAdminPurgeDeletesOnlyTheScopedRows(t *testing.T) {
 	}
 }
 
+func TestAdminDeleteManyRemovesExactlyTheNamedRows(t *testing.T) {
+	app := newAdminTestApp(t)
+	t.Setenv("EXPORT_SECRET", "s3cret")
+	now := time.Now().UTC()
+	for _, id := range []string{"keep", "drop-a", "drop-b"} {
+		insertRow(t, app.db, id, "1-1", StateComplete, `{"prolific_id":"x"}`, sampleTranscript, now, now)
+	}
+
+	mux := http.NewServeMux()
+	app.registerAdminRoutes(mux)
+
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/sessions/delete",
+		strings.NewReader(`{"ids":["drop-a","drop-b"]}`))
+	request.Header.Set("X-Admin-Secret", "s3cret")
+	recorder := httptest.NewRecorder()
+	mux.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status %d, want 200: %s", recorder.Code, recorder.Body.String())
+	}
+	var result struct {
+		Deleted int `json:"deleted"`
+	}
+	json.Unmarshal(recorder.Body.Bytes(), &result)
+	if result.Deleted != 2 {
+		t.Fatalf("deleted = %d, want 2", result.Deleted)
+	}
+
+	remaining, _ := app.loadAdminRows()
+	if len(remaining) != 1 || remaining[0].userID != "keep" {
+		t.Fatalf("wrong rows survived: %#v", remaining)
+	}
+}
+
+func TestAdminDeleteManyRejectsAnEmptySelection(t *testing.T) {
+	app := newAdminTestApp(t)
+	t.Setenv("EXPORT_SECRET", "s3cret")
+
+	mux := http.NewServeMux()
+	app.registerAdminRoutes(mux)
+
+	// Silently succeeding here would hide a frontend that sent no selection.
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/sessions/delete",
+		strings.NewReader(`{"ids":[]}`))
+	request.Header.Set("X-Admin-Secret", "s3cret")
+	recorder := httptest.NewRecorder()
+	mux.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status %d, want 400", recorder.Code)
+	}
+}
+
 func TestAdminDeleteRemovesOneRowAnd404sOnTheSecondTry(t *testing.T) {
 	app := newAdminTestApp(t)
 	t.Setenv("EXPORT_SECRET", "s3cret")

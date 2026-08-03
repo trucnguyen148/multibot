@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import {
   Box,
   Button,
+  Checkbox,
   Chip,
   FormControlLabel,
   Paper,
@@ -40,6 +41,7 @@ interface SessionsPanelProps {
   sessions: SessionSummary[];
   onInspect: (id: string) => void;
   onDelete: (session: SessionSummary) => void;
+  onDeleteSelected: (selected: SessionSummary[]) => void;
   busy: boolean;
 }
 
@@ -47,10 +49,12 @@ export const SessionsPanel: React.FC<SessionsPanelProps> = ({
   sessions,
   onInspect,
   onDelete,
+  onDeleteSelected,
   busy,
 }) => {
   const [showTestRows, setShowTestRows] = useState(true);
   const [search, setSearch] = useState('');
+  const [selected, setSelected] = useState<string[]>([]);
 
   const visible = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -64,6 +68,21 @@ export const SessionsPanel: React.FC<SessionsPanelProps> = ({
   }, [sessions, showTestRows, search]);
 
   const testCount = sessions.filter((session) => session.test_mode).length;
+
+  // Selection is kept as ids and always intersected with what is on screen, so
+  // narrowing the filter can never leave a hidden row armed for deletion.
+  const selectableIds = visible.map((session) => session.user_id);
+  const selectedVisible = selected.filter((id) => selectableIds.includes(id));
+  const allVisibleSelected =
+    selectableIds.length > 0 && selectedVisible.length === selectableIds.length;
+
+  const toggleOne = (id: string) =>
+    setSelected((prev) => (prev.includes(id) ? prev.filter((held) => held !== id) : [...prev, id]));
+
+  const toggleAllVisible = () => setSelected(allVisibleSelected ? [] : selectableIds);
+
+  const selectedRows = sessions.filter((session) => selectedVisible.includes(session.user_id));
+  const selectedRealRows = selectedRows.filter((session) => !session.test_mode).length;
 
   return (
     <Paper variant="outlined" sx={{ p: 3, borderRadius: 2 }}>
@@ -100,10 +119,61 @@ export const SessionsPanel: React.FC<SessionsPanelProps> = ({
         </Stack>
       </Box>
 
+      {selectedRows.length > 0 && (
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 2,
+            flexWrap: 'wrap',
+            mb: 2,
+            p: 1.5,
+            borderRadius: 2,
+            bgcolor: 'action.selected',
+          }}
+        >
+          <Typography variant="body2">
+            {selectedRows.length} selected
+            {selectedRealRows > 0 && (
+              <Typography component="span" variant="body2" sx={{ color: 'error.main', ml: 1 }}>
+                including {selectedRealRows} row{selectedRealRows === 1 ? '' : 's'} not flagged as a
+                test
+              </Typography>
+            )}
+          </Typography>
+          <Stack direction="row" spacing={1}>
+            <Button size="small" onClick={() => setSelected([])}>
+              Clear selection
+            </Button>
+            <Button
+              size="small"
+              variant="contained"
+              color="error"
+              disabled={busy}
+              onClick={() => {
+                onDeleteSelected(selectedRows);
+                setSelected([]);
+              }}
+            >
+              Delete {selectedRows.length} selected
+            </Button>
+          </Stack>
+        </Box>
+      )}
+
       <Box sx={{ overflowX: 'auto' }}>
         <Table size="small">
           <TableHead>
             <TableRow>
+              <TableCell padding="checkbox">
+                <Checkbox
+                  checked={allVisibleSelected}
+                  indeterminate={selectedVisible.length > 0 && !allVisibleSelected}
+                  onChange={toggleAllVisible}
+                  slotProps={{ input: { 'aria-label': 'Select every session shown' } }}
+                />
+              </TableCell>
               <TableCell>Created</TableCell>
               <TableCell>Prolific id</TableCell>
               <TableCell>Name</TableCell>
@@ -123,8 +193,16 @@ export const SessionsPanel: React.FC<SessionsPanelProps> = ({
                 hover
                 // Test rows are tinted rather than hidden, so a real participant
                 // is never deleted while clearing test data.
+                selected={selectedVisible.includes(session.user_id)}
                 sx={session.test_mode ? { bgcolor: 'warning.light', opacity: 0.75 } : undefined}
               >
+                <TableCell padding="checkbox">
+                  <Checkbox
+                    checked={selectedVisible.includes(session.user_id)}
+                    onChange={() => toggleOne(session.user_id)}
+                    slotProps={{ input: { 'aria-label': `Select ${session.user_id}` } }}
+                  />
+                </TableCell>
                 <TableCell sx={{ whiteSpace: 'nowrap' }}>
                   {formatTimestamp(session.created_at)}
                 </TableCell>
@@ -170,7 +248,7 @@ export const SessionsPanel: React.FC<SessionsPanelProps> = ({
             ))}
             {visible.length === 0 && (
               <TableRow>
-                <TableCell colSpan={10} align="center" sx={{ color: 'text.secondary', py: 4 }}>
+                <TableCell colSpan={11} align="center" sx={{ color: 'text.secondary', py: 4 }}>
                   No sessions match.
                 </TableCell>
               </TableRow>

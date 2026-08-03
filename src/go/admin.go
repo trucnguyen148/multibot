@@ -63,6 +63,7 @@ func (app *App) registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/admin/sessions", app.adminListHandler)
 	mux.HandleFunc("GET /api/admin/sessions/{id}", app.adminGetHandler)
 	mux.HandleFunc("DELETE /api/admin/sessions/{id}", app.adminDeleteHandler)
+	mux.HandleFunc("POST /api/admin/sessions/delete", app.adminDeleteManyHandler)
 	mux.HandleFunc("POST /api/admin/purge", app.adminPurgeHandler)
 	mux.HandleFunc("GET /api/admin/stats", app.adminStatsHandler)
 }
@@ -269,6 +270,37 @@ func (app *App) adminDeleteHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	app.logger.Warn("admin deleted session", "sessionId", id)
 	writeJSON(w, map[string]any{"deleted": affected}, app.logger)
+}
+
+// adminDeleteManyHandler removes an explicit list of ids in one transaction.
+// The scoped purge below covers the routine cases; this covers picking rows out
+// of the table by hand, which is what most development clearing actually is.
+func (app *App) adminDeleteManyHandler(w http.ResponseWriter, r *http.Request) {
+	if !app.requireAdmin(w, r) {
+		return
+	}
+	var payload struct {
+		IDs []string `json:"ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	// An empty list is a mistake rather than a request to delete nothing, and
+	// treating it as a no-op would hide a frontend bug that sent no selection.
+	if len(payload.IDs) == 0 {
+		http.Error(w, "ids must not be empty", http.StatusBadRequest)
+		return
+	}
+
+	deleted, err := deleteSessions(app.db, payload.IDs)
+	if err != nil {
+		app.logger.Error("bulk delete failed", "count", len(payload.IDs), "error", err)
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+	app.logger.Warn("admin deleted sessions by id", "requested", len(payload.IDs), "deleted", deleted)
+	writeJSON(w, map[string]any{"deleted": deleted}, app.logger)
 }
 
 // --- Purge ---
