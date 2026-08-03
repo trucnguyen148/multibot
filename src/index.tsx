@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import { ChatInterface } from './gui/chat-interface';
 import fallbackExperimentData from './data.json';
-import { Box, Container, Typography } from '@mui/material';
+import { Box, CircularProgress, Container, Typography } from '@mui/material';
 import { PreSurvey } from './gui/pre-survey';
 import { OnBoarding } from './gui/onboarding';
 import { PostSurvey } from './gui/post-survey';
@@ -342,7 +342,11 @@ function App() {
           bgcolor: '#f8f9fa',
         }}
       >
-        <div className="h-12 w-12 animate-spin rounded-full border-b-2 border-t-2 border-blue-600"></div>
+        {/* Was a <div> carrying Tailwind utility classes, which this project has
+            never had installed, so it rendered as an empty zero-size element and
+            every participant saw the text with no spinner above it. MUI is the
+            styling system here. */}
+        <CircularProgress size={48} thickness={4} />
         <Typography variant="h6" sx={{ color: 'text.secondary', mt: 3 }}>
           Connecting to chat server...
         </Typography>
