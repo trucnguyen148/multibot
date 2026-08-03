@@ -46,8 +46,14 @@ The underlying urls, if you prefer to type them:
 /admin                                   researcher page, creates no session, asks for the secret
 /?test=true                              test mode, condition assigned at random
 /?test=true&condition=2-1                test mode, forced condition
+/?test=true&start=post                   open one screen directly, skipping everything before it
 /?PROLIFIC_PID=<id>&STUDY_ID=<id>&SESSION_ID=<id>
 ```
+
+`start` takes `onboarding`, `pre`, `chat`, `post` or `complete`, and is resolved by the backend so
+the screen is the real one with the live completion code and the real scripts. Like `condition`, it
+is honoured only alongside `test=true` and an unknown value returns 400. The `/admin` page links to
+all of them under "Walk the study".
 
 `condition` is honoured only alongside `test=true`, and an unknown key returns 400 rather than
 falling back to a random cell, so a typo cannot leave you believing you walked a condition you never
@@ -67,9 +73,10 @@ the flag is ever missed. Filter on `pre_survey_data.test_mode` when analysing.
 
 ## Blocking before recruitment
 
-- [ ] **Clear the 28 development and test rows from the production database.** The `/admin` route
-      that makes this possible is now built (below), so this is a five-minute job. Export first, then
-      use the "Export and delete" tab. Nothing in those rows is a real participant.
+- [x] **Cleared the development and test rows from the production database**, done by Simo on
+      2026-08-03 through the new page. The database now holds only rows created while testing that
+      day. Sessions can be cleared either by scope from "Export and delete" or by ticking individual
+      rows in the session table, which is the everyday way to do it while still developing.
 - [x] **Built the `/admin` route.** One authenticated page owns inspection, per-row and filtered
       delete, the data export, recruitment progress, and mirror health, and it absorbed `/test` so
       the condition list is no longer served to anyone who finds the URL. Spec in `docs/specs/`
