@@ -230,6 +230,7 @@ func (app *App) createSessionHandler(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 	testMode := isTruthy(query.Get("test"))
 	requested := strings.TrimSpace(query.Get("condition"))
+	requestedStart := strings.TrimSpace(query.Get("start"))
 
 	var condition string
 	var err error
@@ -271,6 +272,25 @@ func (app *App) createSessionHandler(w http.ResponseWriter, r *http.Request) {
 	// a walkthrough abandoned partway through is still excluded from the tally.
 	if testMode {
 		session.PreSurveyData = json.RawMessage(`{"test_mode":true}`)
+	}
+
+	// Starting partway through lets a researcher open the post-survey without
+	// answering a pre-survey and a chat first. Resolved here rather than in the
+	// frontend so the screen is the real one, driven by buildStageResponse, with
+	// the live completion code and the real scripts for the cell.
+	switch {
+	case testMode && requestedStart != "":
+		start, err := parseStartState(requestedStart)
+		if err != nil {
+			app.logger.Warn("rejected test session", "start", requestedStart, "error", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		session.CurrentState = start
+	case requestedStart != "":
+		// Same reasoning as the condition override. Honouring this for a real
+		// participant would hand anyone a completion code in one request.
+		app.logger.Warn("ignored start override outside test mode", "start", requestedStart)
 	}
 
 	if err := saveSession(app.db, session); err != nil {
@@ -535,6 +555,31 @@ func (app *App) tallyConditions() (conditionTally, error) {
 		}
 	}
 	return tally, rows.Err()
+}
+
+// startStates are the screens a researcher link can open directly, keyed by the
+// shorthand used in the URL. The full `STATE_` spelling is accepted too, so a
+// state copied out of the export or the admin table works without translation.
+var startStates = map[string]SessionState{
+	"onboarding":  StateOnboarding,
+	"pre":         StatePreSurvey,
+	"pre_survey":  StatePreSurvey,
+	"chat":        StateInteraction,
+	"interaction": StateInteraction,
+	"post":        StatePostSurvey,
+	"post_survey": StatePostSurvey,
+	"complete":    StateComplete,
+}
+
+// parseStartState rejects anything it does not recognise rather than falling
+// back to onboarding, so a typo fails loudly instead of quietly opening the
+// wrong screen and looking like the link is broken.
+func parseStartState(value string) (SessionState, error) {
+	key := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(value)), "state_")
+	if state, known := startStates[key]; known {
+		return state, nil
+	}
+	return "", fmt.Errorf("unknown start state %q", value)
 }
 
 // testCondition resolves the cell for a researcher walkthrough. An explicit

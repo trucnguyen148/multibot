@@ -120,6 +120,31 @@ export const TestLinksPanel: React.FC<TestLinksPanelProps> = ({ data, apiBaseUrl
       <Divider sx={{ my: 3 }} />
 
       <Typography variant="subtitle2" gutterBottom color="primary">
+        Jump straight to one screen
+      </Typography>
+      <Typography variant="body2" sx={{ color: 'text.secondary', mb: 2 }}>
+        Opens the flow at that screen without answering everything before it, which is the quick way
+        to review survey wording. The backend resolves <code>&start=</code> and only alongside{' '}
+        <code>?test=true</code>, so the screen is the real one, with the live completion code and
+        the real scripts. A session started this way has no data from the screens it skipped, and is
+        flagged <code>test_mode</code> like any other walkthrough.
+      </Typography>
+      <Stack spacing={1.5}>
+        {[
+          ['pre', 'Pre-survey (DDI, SSRPH, AIAS)'],
+          ['chat', 'Chat, condition assigned at random'],
+          ['post', 'Post-survey (BFNE, comfort, reflections)'],
+          ['complete', 'Completion screen, showing the live Prolific code'],
+        ].map(([key, label]) => (
+          <Link key={key} href={`/?test=true&start=${key}`}>
+            {label}
+          </Link>
+        ))}
+      </Stack>
+
+      <Divider sx={{ my: 3 }} />
+
+      <Typography variant="subtitle2" gutterBottom color="primary">
         Other entry points
       </Typography>
       <Stack spacing={1.5}>

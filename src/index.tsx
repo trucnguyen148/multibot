@@ -61,6 +61,12 @@ const TEST_MODE = ['true', '1', 'yes'].includes(readParam('test').toLowerCase())
 // on its own does nothing.
 const CONDITION_FROM_URL = readParam('condition');
 
+// Opens the flow at one screen instead of walking to it, so the surveys can be
+// reviewed without answering everything before them. The backend resolves it and
+// only alongside ?test=true, so sending it on its own does nothing. Accepted
+// values are onboarding, pre, chat, post and complete.
+const START_FROM_URL = readParam('start');
+
 // /admin is everything a researcher does outside the participant flow. Matched
 // on the pathname rather than with a router, since `serve -s build` already
 // rewrites unknown paths to index.html and one page does not justify a routing
@@ -206,6 +212,7 @@ function App() {
       if (TEST_MODE) {
         params.set('test', 'true');
         if (CONDITION_FROM_URL) params.set('condition', CONDITION_FROM_URL);
+        if (START_FROM_URL) params.set('start', START_FROM_URL);
       }
       const query = params.toString();
       const response = await fetch(`${API_BASE_URL}/api/session/init${query ? `?${query}` : ''}`, {
@@ -228,7 +235,23 @@ function App() {
           ? CONDITION_FROM_URL
           : available[Math.floor(Math.random() * available.length)];
       setSessionId(`demo-${Date.now()}`);
-      setStage(buildFallbackStage('STATE_ONBOARDING', condition));
+      // Mirrors parseStartState in the backend, so a researcher link opens the
+      // same screen even when the backend is unreachable. Nothing is saved on
+      // this branch either way.
+      const offlineStart: Record<string, string> = {
+        onboarding: 'STATE_ONBOARDING',
+        pre: 'STATE_PRE_SURVEY',
+        pre_survey: 'STATE_PRE_SURVEY',
+        chat: 'STATE_INTERACTION',
+        interaction: 'STATE_INTERACTION',
+        post: 'STATE_POST_SURVEY',
+        post_survey: 'STATE_POST_SURVEY',
+        complete: 'STATE_COMPLETE',
+      };
+      const startState =
+        (TEST_MODE && offlineStart[START_FROM_URL.toLowerCase().replace(/^state_/, '')]) ||
+        'STATE_ONBOARDING';
+      setStage(buildFallbackStage(startState, condition));
       setError(null);
     } finally {
       setLoading(false);

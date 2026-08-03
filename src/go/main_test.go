@@ -140,6 +140,42 @@ func TestTestConditionIgnoresTheQuota(t *testing.T) {
 	}
 }
 
+func TestParseStartState(t *testing.T) {
+	cases := []struct {
+		value string
+		want  SessionState
+	}{
+		{"post", StatePostSurvey},
+		{"POST", StatePostSurvey},
+		{" post_survey ", StatePostSurvey},
+		// Copied straight out of the admin table or the export.
+		{"STATE_POST_SURVEY", StatePostSurvey},
+		{"pre", StatePreSurvey},
+		{"chat", StateInteraction},
+		{"complete", StateComplete},
+		{"onboarding", StateOnboarding},
+	}
+	for _, tc := range cases {
+		t.Run(tc.value, func(t *testing.T) {
+			got, err := parseStartState(tc.value)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("parseStartState(%q) = %q, want %q", tc.value, got, tc.want)
+			}
+		})
+	}
+
+	// A typo must fail loudly. Falling back to onboarding would look like the
+	// link is broken rather than mistyped.
+	for _, bad := range []string{"", "postsurvey", "STATE_CHAT_STAGE_1", "survey"} {
+		if _, err := parseStartState(bad); err == nil {
+			t.Fatalf("expected %q to be rejected", bad)
+		}
+	}
+}
+
 func TestSelectConditionBalancesOnStartedSessions(t *testing.T) {
 	app := &App{conditions: []string{"1-1", "2-1", "3-1"}}
 
