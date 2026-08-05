@@ -17,6 +17,21 @@ const MS_PER_WORD = 350;
 const BASE_DELAY_MS = 1000;
 const MAX_DELAY_MS = 10000;
 
+// Distinct avatar colors per bot so participants can tell speakers apart at a
+// glance. Falls back to the old neutral grey for any sender not listed here.
+const BOT_AVATAR_COLORS: Record<string, string> = {
+  Vieno: '#5C6BC0',
+  Sam: '#43A047',
+  Charlie: '#FB8C00',
+};
+const DEFAULT_BOT_AVATAR_COLOR = 'grey.500';
+
+// A stage must end somewhere even if the host never asks to move on and the
+// network never reaches the server. Mirrors maxMirrorTurnsPerStage in
+// mirror.go, which is the cap actually enforced; this one is the client-side
+// fallback for when that call never completes at all.
+const MAX_MIRROR_TURNS_PER_STAGE = 10;
+
 const typingDelayFor = (text: string): number => {
   const wordCount = text.split(/\s+/).filter((word) => word.length > 0).length;
   return Math.min(wordCount * MS_PER_WORD + BASE_DELAY_MS, MAX_DELAY_MS);
@@ -53,6 +68,20 @@ const MIRROR_FALLBACK = 'Thanks for sharing that.';
 interface MirrorReply {
   text: string;
   generated: boolean;
+  // True when the host judged the stage's exchange complete, or the server's
+  // turn cap was reached, and the comfort check-in should follow this reply.
+  advance: boolean;
+}
+
+// What playMirror sends as `history`: the conversation so far, oldest first,
+// across every stage played to this point (not just the current one), so the
+// host answers with the whole conversation in view rather than being
+// re-introduced to it every turn. Assessment check-ins are not conversation
+// content and are left out.
+interface MirrorHistoryTurn {
+  sender: string;
+  text: string;
+  isUser: boolean;
 }
 
 interface ChatInterfaceProps {
@@ -60,8 +89,14 @@ interface ChatInterfaceProps {
   conditionScripts: Record<string, BotScript[]>;
   testMode?: boolean;
   // Supplied only when the server reports mirroring is on. When absent, the
-  // host says nothing between the participant's message and the next stage.
-  requestMirror?: (userText: string, stage: string) => Promise<MirrorReply>;
+  // host says nothing between the participant's message and the next stage,
+  // and a stage advances only once the turn cap is reached.
+  requestMirror?: (
+    userText: string,
+    stage: string,
+    history: MirrorHistoryTurn[],
+    turnIndex: number
+  ) => Promise<MirrorReply>;
   onChatComplete: (
     transcript: ChatMessage[],
     stage1Score: number,
@@ -103,6 +138,11 @@ export const ChatInterface = ({
   // Same reason as messagesRef. The stage 3 rating is set and used within one
   // event, so state has not committed by the time the closing timeout reads it.
   const latestStage3Ref = useRef<number>(0);
+  // The participant's turn number within the current stage, reset when the
+  // stage changes. Sent to the server so it can enforce the stage's turn cap,
+  // and checked client-side as the fallback for when that call never
+  // completes at all.
+  const turnsThisStageRef = useRef<number>(0);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -123,6 +163,7 @@ export const ChatInterface = ({
     const startedStages = stageStartedRef.current;
     let isCancelled = false;
     startedStages[stageKey] = true;
+    turnsThisStageRef.current = 0;
 
     const playBotScripts = async () => {
       for (const script of scriptsToPlay) {
@@ -161,21 +202,33 @@ export const ChatInterface = ({
     };
   }, [conditionScripts, internalStage]);
 
-  // Plays the host's acknowledgement of what the participant just wrote, then
-  // resolves so the caller can advance the stage. Never throws: a failure here
-  // must not strand a participant mid-study.
-  const playMirror = async (userText: string, stage: string): Promise<void> => {
-    if (!requestMirror) return;
+  // Plays the host's reply to what the participant just wrote, then resolves
+  // with whether the host judged the stage complete. Never throws: a failure
+  // here must not strand a participant mid-study.
+  const playMirror = async (userText: string, stage: string, turnIndex: number): Promise<boolean> => {
+    if (!requestMirror) return true;
 
     const startedAt = Date.now();
     setIsTyping(true);
     setTypingBot('Vieno');
 
-    let reply: MirrorReply = { text: MIRROR_FALLBACK, generated: false };
+    // The whole conversation to this point, across every stage, so the host
+    // answers with it in view rather than being re-introduced to it every
+    // turn. Assessment check-ins are not conversation content.
+    const history: MirrorHistoryTurn[] = messagesRef.current
+      .filter((msg) => !msg.isAssessment)
+      .map((msg) => ({ sender: msg.sender, text: msg.text, isUser: msg.isUser === true }));
+
+    // A fallback reply always advances: it carries no judgment about whether
+    // the stage is ready to end, so tying it to the turn cap instead would let
+    // a run of failures strand the participant re-typing into a broken model
+    // rather than continuing the study.
+    let reply: MirrorReply = { text: MIRROR_FALLBACK, generated: false, advance: true };
     try {
-      reply = await requestMirror(userText, stage);
+      reply = await requestMirror(userText, stage, history, turnIndex);
     } catch {
-      // Keep the fallback.
+      // Keep the fallback: the network never reached the server at all.
+      reply = { text: MIRROR_FALLBACK, generated: false, advance: true };
     }
 
     // Hold the reply until it has been "typed" at the same rate as every
@@ -199,6 +252,8 @@ export const ChatInterface = ({
         mirror: reply.generated ? 'generated' : 'fallback',
       },
     ]);
+
+    return reply.advance;
   };
 
   const handleUserSubmit = async () => {
@@ -217,19 +272,16 @@ export const ChatInterface = ({
     setInputValue('');
     setAwaitingUser(false);
 
-    // Stages 1 and 2 run the host acknowledgement first and the check-in after,
-    // so the comfort rating is taken with the same conversational context in
-    // place in every condition. An earlier version treated the two as
-    // alternatives, which would have removed the acknowledgement from the
-    // manipulation the moment the check-ins were switched on.
-    if (internalStage === 'STATE_CHAT_STAGE_1' || internalStage === 'STATE_CHAT_STAGE_2') {
-      await playMirror(userMsg.text, internalStage);
+    // Every stage runs the same loop: the host replies, and either she or the
+    // server's turn cap decides the stage is done, in which case the check-in
+    // follows; otherwise the participant is free to keep going, up to
+    // MAX_MIRROR_TURNS_PER_STAGE exchanges.
+    turnsThisStageRef.current += 1;
+    const advance = await playMirror(userMsg.text, internalStage, turnsThisStageRef.current);
+    if (advance) {
       askForComfort(internalStage);
-    } else if (internalStage === 'STATE_CHAT_STAGE_3') {
-      // Stage 3 gets no acknowledgement, since the closing line already serves
-      // that purpose. The check-in comes first so the Late stage is rated before
-      // the session visibly ends.
-      askForComfort(internalStage);
+    } else {
+      setAwaitingUser(true);
     }
   };
 
@@ -430,7 +482,13 @@ export const ChatInterface = ({
                 }}
               >
                 <Avatar
-                  sx={{ bgcolor: isUser ? 'primary.main' : 'grey.500', width: 32, height: 32 }}
+                  sx={{
+                    bgcolor: isUser
+                      ? 'primary.main'
+                      : BOT_AVATAR_COLORS[msg.sender] || DEFAULT_BOT_AVATAR_COLOR,
+                    width: 32,
+                    height: 32,
+                  }}
                 >
                   {isUser ? <PersonIcon fontSize="small" /> : <SmartToyIcon fontSize="small" />}
                 </Avatar>
@@ -469,7 +527,13 @@ export const ChatInterface = ({
           {isTyping && (
             <Fade in={isTyping}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2 }}>
-                <Avatar sx={{ bgcolor: 'grey.500', width: 32, height: 32 }}>
+                <Avatar
+                  sx={{
+                    bgcolor: (typingBot && BOT_AVATAR_COLORS[typingBot]) || DEFAULT_BOT_AVATAR_COLOR,
+                    width: 32,
+                    height: 32,
+                  }}
+                >
                   <SmartToyIcon fontSize="small" />
                 </Avatar>
                 <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
