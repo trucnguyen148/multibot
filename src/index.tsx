@@ -125,21 +125,31 @@ if (!isLocal && !API_BASE_URL) {
 // backend already falls back to a fixed line on any generation failure, so this
 // only has to survive the network layer. `generated` is carried through to the
 // transcript so the export can tell a real acknowledgement from a fallback.
+// `history` is the conversation so far, oldest first, across every stage
+// played to this point, so the host answers with the whole conversation in
+// view instead of being re-introduced to it every turn. `turnIndex` is the
+// participant's turn number within the current stage (1 for their first
+// message in it), which the backend uses to enforce the stage's turn cap.
+// `advance` comes back true when the host judged the stage complete, or the
+// cap was reached, and the conversation should move on.
 const requestMirror = async (
   sessionId: string,
   userText: string,
-  stage: string
-): Promise<{ text: string; generated: boolean }> => {
+  stage: string,
+  history: { sender: string; text: string; isUser: boolean }[],
+  turnIndex: number
+): Promise<{ text: string; generated: boolean; advance: boolean }> => {
   const response = await fetch(`${API_BASE_URL}/api/mirror`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sessionId, stage, text: userText }),
+    body: JSON.stringify({ sessionId, stage, text: userText, history, turnIndex }),
   });
   if (!response.ok) throw new Error('mirror unavailable');
   const payload = await response.json();
   return {
     text: typeof payload.text === 'string' ? payload.text : 'Thanks for sharing that.',
     generated: payload.generated === true,
+    advance: payload.advance === true,
   };
 };
 
@@ -467,7 +477,8 @@ function App() {
                 // the offline fallback path where nothing is being saved anyway.
                 requestMirror={
                   sessionId
-                    ? (userText, chatStage) => requestMirror(sessionId, userText, chatStage)
+                    ? (userText, chatStage, history, turnIndex) =>
+                        requestMirror(sessionId, userText, chatStage, history, turnIndex)
                     : undefined
                 }
                 onChatComplete={async (transcript, stage1Score, stage2Score, stage3Score) => {

@@ -7,7 +7,7 @@
           {
             "sender": "Vieno",
             "tag": "open",
-            "text": "Hi [User's Name], thanks for joining today. I'm Vieno, and I'll be hosting this chat."
+            "text": "Hi [User's Name], thanks for joining today. I'm Vieno, and I'll be hosting this chat. We'll spend a short time talking through everyday work and study pressures, and nothing said here is used against you, it's only recorded for research purposes."
           },
           {
             "sender": "Vieno",
@@ -53,7 +53,12 @@
           {
             "sender": "Vieno",
             "tag": "open",
-            "text": "Hi everyone, thanks for joining today. I'm Vieno, and I'll be hosting this chat."
+            "text": "Hi everyone, thanks for joining today. I'm Vieno, and I'll be hosting this chat. We'll spend a short time talking through everyday work and study pressures, and nothing said here is used against you, it's only recorded for research purposes."
+          },
+          {
+            "sender": "Vieno",
+            "tag": "open",
+            "text": "Sam, would you like to say a quick hello before we start?"
           },
           {
             "sender": "Sam",
@@ -119,7 +124,12 @@
           {
             "sender": "Vieno",
             "tag": "open",
-            "text": "Hi everyone, thanks for joining today. I'm Vieno, and I'll be hosting this chat."
+            "text": "Hi everyone, thanks for joining today. I'm Vieno, and I'll be hosting this chat. We'll spend a short time talking through everyday work and study pressures, and nothing said here is used against you, it's only recorded for research purposes."
+          },
+          {
+            "sender": "Vieno",
+            "tag": "open",
+            "text": "Sam, Charlie, would you like to say a quick hello before we start?"
           },
           {
             "sender": "Sam",

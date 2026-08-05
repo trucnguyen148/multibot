@@ -1,0 +1,31 @@
+services:
+  backend:
+    build:
+      context: ./src/go
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - DATA_DIR=/data
+      - ALLOWED_ORIGIN=${ALLOWED_ORIGIN:-*}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:?OPENROUTER_API_KEY must be set in .env}
+    volumes:
+      - sessions-db:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  frontend:
+    build:
+      context: .
+      args:
+        REACT_APP_BACKEND_URL: ${REACT_APP_BACKEND_URL:-}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  sessions-db:
