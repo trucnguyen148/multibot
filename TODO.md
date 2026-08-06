@@ -194,7 +194,16 @@ and this implementation disagree, are tracked there rather than in this file. As
       software, or how many others they recall. A reviewer of a paper about multi-agent personas will
       ask, and the data cannot currently answer. Raised and deliberately deferred on 2026-08-06; one
       required open-ended item in the post-survey would close it.
-- [ ] **Neither survey collects demographics.** Fine if the analysis joins on Prolific's own export
+- [x] **Done: age and gender are collected.** In the pre-survey, placed after the attitude items
+      rather than at the top, since asking gender immediately before items about being judged for
+      needing help is a priming risk in a study that measures exactly that. Stored as `age` (integer)
+      and `gender`, with `gender_self_describe` when chosen.
+- [ ] **The seriousness check is a model judgment and is wrong about one time in five.** Measured
+      over three runs of a 20-item probe set: 22/27 non-answers caught, 6/33 genuine answers wrongly
+      flagged, and not deterministic between runs. It costs a participant one hedged sentence and
+      never a turn, so it cannot affect the design, but a handful of honest participants will see it.
+      Worth a line in the paper if any transcript shows it firing on a real answer.
+- [x] **Superseded: neither survey collects demographics.** Fine if the analysis joins on Prolific's own export
       by `prolific_id`, which is captured. Worth confirming before recruitment closes rather than
       after.
 - [ ] **Condition assignment is unbalanced.** Each session draws a condition uniformly at random and

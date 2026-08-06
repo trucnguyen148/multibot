@@ -92,6 +92,8 @@ const TEST_PRE_SURVEY: SurveyResponse = {
   ...buildScaleDefaults('DDI', 12, 1),
   ...buildScaleDefaults('SSRPH', 5, 0),
   ...buildScaleDefaults('AIAS', 4, 1),
+  age: '18',
+  gender: 'Prefer not to say',
   Self_Comfort_Pre: 1,
 };
 
@@ -137,7 +139,7 @@ if (!isLocal && !API_BASE_URL) {
 //
 // Where the stage ends is not read off this reply. Both sides derive it from
 // the turn index, so a request that never completes cannot shorten a stage.
-const MIRROR_MARKS = ['generated', 'declined', 'nudge', 'unreadable'] as const;
+const MIRROR_MARKS = ['generated', 'declined', 'not-serious'] as const;
 
 const requestMirror = async (
   sessionId: string,
@@ -145,12 +147,10 @@ const requestMirror = async (
   stage: string,
   history: { sender: string; text: string; isUser: boolean }[],
   turnIndex: number,
-  declined: boolean,
-  retryCount: number
+  declined: boolean
 ): Promise<{
   text: string;
-  mirror: 'generated' | 'fallback' | 'declined' | 'nudge' | 'unreadable';
-  retry: boolean;
+  mirror: 'generated' | 'fallback' | 'declined' | 'not-serious';
 }> => {
   const response = await fetch(`${API_BASE_URL}/api/mirror`, {
     method: 'POST',
@@ -162,7 +162,6 @@ const requestMirror = async (
       history,
       turnIndex,
       declined,
-      retryCount,
     }),
   });
   if (!response.ok) throw new Error('mirror unavailable');
@@ -170,7 +169,6 @@ const requestMirror = async (
   return {
     text: typeof payload.text === 'string' ? payload.text : 'Thanks for sharing that.',
     mirror: MIRROR_MARKS.includes(payload.mirror) ? payload.mirror : 'fallback',
-    retry: payload.retry === true,
   };
 };
 
@@ -353,7 +351,10 @@ function App() {
       setIsConnecting(false);
       await submitStage({
         currentState: 'STATE_PRE_SURVEY',
-        preSurveyData: preSurvey,
+        // Age arrives from a text input as a string. It is validated to an
+        // integer before submit is enabled, so it is coerced here rather than
+        // leaving the column holding "34" for some rows and 34 for others.
+        preSurveyData: { ...preSurvey, age: Number(preSurvey.age) },
       });
     }, 1500);
   };
@@ -498,16 +499,8 @@ function App() {
                 // the offline fallback path where nothing is being saved anyway.
                 requestMirror={
                   sessionId
-                    ? (userText, chatStage, history, turnIndex, declined, retryCount) =>
-                        requestMirror(
-                          sessionId,
-                          userText,
-                          chatStage,
-                          history,
-                          turnIndex,
-                          declined,
-                          retryCount
-                        )
+                    ? (userText, chatStage, history, turnIndex, declined) =>
+                        requestMirror(sessionId, userText, chatStage, history, turnIndex, declined)
                     : undefined
                 }
                 onChatComplete={async (transcript, stage1Score, stage2Score, stage3Score) => {

@@ -122,6 +122,16 @@ export const OnBoarding: React.FC<OnBoardingProps> = ({
                 so that the host can reply to them. Please do not include information that could
                 identify you or anyone else.
               </Typography>
+              {/* Said before the chat rather than during it. A participant who
+                  knows the expectation up front can meet it; one told afterwards
+                  has only been scolded. This is also what makes the host's single
+                  in-chat remark fair, since nothing about it is a surprise. */}
+              <Typography variant="body2" sx={{ mt: 1.5 }}>
+                There are no right or wrong answers here, and you can share as much or as little as
+                you like. All we ask is that you answer in your own words. Submissions that are
+                clearly not genuine attempts, such as random text or copied filler, cannot be
+                compensated.
+              </Typography>
             </Paper>
             <FormControlLabel
               control={

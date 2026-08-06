@@ -1,13 +1,44 @@
 import React from 'react';
 import { StageConfig } from '../utils';
-import { Box, Button, Divider, Paper, Slider, Stack, Typography } from '@mui/material';
+import {
+  Box,
+  Button,
+  Divider,
+  FormControl,
+  FormControlLabel,
+  Paper,
+  Radio,
+  RadioGroup,
+  Slider,
+  Stack,
+  TextField,
+  Typography,
+} from '@mui/material';
 
 interface PreSurveyProps {
   stage: StageConfig;
   preSurvey: Record<string, any>;
-  handleSliderChange: (surveyType: 'pre' | 'post', key: string, value: number | number[]) => void;
+  handleSliderChange: (
+    surveyType: 'pre' | 'post',
+    key: string,
+    value: number | number[] | string
+  ) => void;
   handlePreSurveySubmit: (event: React.FormEvent<HTMLFormElement>) => void;
 }
+
+// Woman and man first because they are what most participants will pick, then
+// the options that exist so nobody has to misreport themselves to continue.
+// "Prefer not to say" is a real answer here rather than a gap in the data.
+const genderOptions = [
+  'Woman',
+  'Man',
+  'Non-binary',
+  'Prefer to self-describe',
+  'Prefer not to say',
+];
+
+const MIN_AGE = 18;
+const MAX_AGE = 100;
 
 // Section headings are written for the participant, not for the codebook. The
 // instruments are still DDI, SSRPH and AIAS and the response keys are unchanged,
@@ -51,6 +82,8 @@ const requiredPreKeys = [
   ...ddiItems.map((_, i) => `DDI_${i + 1}`),
   ...ssrphItems.map((_, i) => `SSRPH_${i + 1}`),
   ...aiasItems.map((_, i) => `AIAS_${i + 1}`),
+  'age',
+  'gender',
   'Self_Comfort_Pre',
 ];
 
@@ -60,10 +93,21 @@ export const PreSurvey: React.FC<PreSurveyProps> = ({
   handleSliderChange,
   handlePreSurveySubmit,
 }) => {
-  const isComplete = requiredPreKeys.every((key) => {
+  const answered = (key: string): boolean => {
     const value = preSurvey[key];
     return value !== undefined && String(value).trim() !== '';
-  });
+  };
+
+  const ageEntry = String(preSurvey['age'] ?? '').trim();
+  const ageValue = Number(ageEntry);
+  const ageIsValid =
+    ageEntry !== '' && Number.isInteger(ageValue) && ageValue >= MIN_AGE && ageValue <= MAX_AGE;
+  const selfDescribing = preSurvey['gender'] === 'Prefer to self-describe';
+
+  const isComplete =
+    requiredPreKeys.every(answered) &&
+    ageIsValid &&
+    (!selfDescribing || answered('gender_self_describe'));
 
   return (
     <Paper elevation={2} sx={{ p: 4, borderRadius: 2 }}>
@@ -227,6 +271,76 @@ export const PreSurvey: React.FC<PreSurveyProps> = ({
                   </Box>
                 );
               })}
+            </Stack>
+          </Box>
+          <Divider />
+
+          {/* Demographics sit here, after the attitude items and before the
+              chat, rather than at the top of the survey. Asking someone their
+              gender immediately before items about being judged for needing
+              help is a documented priming risk, and this study measures exactly
+              that. Nothing here is analysed as an outcome; it is for describing
+              the sample. */}
+          <Box>
+            <Typography variant="h6" sx={{ color: 'primary.main', mb: 1 }}>
+              About you
+            </Typography>
+            <Typography variant="body2" sx={{ color: 'text.secondary', mb: 3 }}>
+              These help us describe who took part. They are reported only as group totals.
+            </Typography>
+
+            <Stack spacing={3}>
+              <Box>
+                <Typography variant="body1" gutterBottom>
+                  How old are you?
+                </Typography>
+                <TextField
+                  type="number"
+                  size="small"
+                  value={ageEntry}
+                  onChange={(e) => handleSliderChange('pre', 'age', e.target.value)}
+                  slotProps={{ htmlInput: { min: MIN_AGE, max: MAX_AGE, step: 1 } }}
+                  sx={{ width: 140 }}
+                  error={ageEntry !== '' && !ageIsValid}
+                  helperText={
+                    ageEntry !== '' && !ageIsValid
+                      ? `Please enter an age between ${MIN_AGE} and ${MAX_AGE}`
+                      : ' '
+                  }
+                />
+              </Box>
+
+              <FormControl component="fieldset">
+                <Typography variant="body1" sx={{ mb: 1 }}>
+                  How do you describe your gender?
+                </Typography>
+                <RadioGroup
+                  value={preSurvey['gender'] || ''}
+                  onChange={(e) => handleSliderChange('pre', 'gender', e.target.value)}
+                >
+                  {genderOptions.map((option) => (
+                    <FormControlLabel
+                      key={option}
+                      value={option}
+                      control={<Radio />}
+                      label={option}
+                    />
+                  ))}
+                </RadioGroup>
+                {selfDescribing && (
+                  <TextField
+                    fullWidth
+                    sx={{ mt: 1 }}
+                    size="small"
+                    label="How would you describe it?"
+                    value={(preSurvey['gender_self_describe'] as string) || ''}
+                    onChange={(e) =>
+                      handleSliderChange('pre', 'gender_self_describe', e.target.value)
+                    }
+                    required
+                  />
+                )}
+              </FormControl>
             </Stack>
           </Box>
           <Divider />

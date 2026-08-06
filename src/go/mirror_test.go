@@ -36,6 +36,66 @@ func TestMirrorSystemPromptConstrainsTheHost(t *testing.T) {
 	}
 }
 
+// The host judges whether there is an answer present. The prompt has to say so,
+// and has to say just as plainly what does not count, or the study starts
+// telling people that "I would rather not go into it" was not a real answer.
+func TestMirrorSystemPromptProtectsShortAndDecliningAnswers(t *testing.T) {
+	prompt := mirrorSystemPrompt([]string{"Sam"}, "Kim")
+	required := []string{
+		notAnAnswerMarker,
+		"does not engage with this conversation at all",
+		"Declining to answer",
+		"nothing to share",
+		"If you are unsure, it engages",
+	}
+	for _, phrase := range required {
+		if !strings.Contains(prompt, phrase) {
+			t.Errorf("system prompt is missing %q, which is what keeps the judgment from becoming pressure to disclose", phrase)
+		}
+	}
+}
+
+// Vieno says her piece and moves on. She must not ask again: retrying gave one
+// participant an extra prompt to disclose that others did not get, which is the
+// confound the fixed stage length exists to remove.
+func TestMirrorNotSeriousNamesItAndLeavesTheChoice(t *testing.T) {
+	if !strings.Contains(mirrorNotSerious, "serious") {
+		t.Errorf("the remark does not name the problem: %q", mirrorNotSerious)
+	}
+	if !strings.Contains(mirrorNotSerious, "your choice") {
+		t.Errorf("the remark no longer leaves the choice with the participant: %q", mirrorNotSerious)
+	}
+	for _, demand := range []string{"please", "Please", "again", "try"} {
+		if strings.Contains(mirrorNotSerious, demand) {
+			t.Errorf("the remark asks for another attempt via %q, but the turn is already spent: %q",
+				demand, mirrorNotSerious)
+		}
+	}
+}
+
+// The marker is an instruction to the server and must never be shown.
+func TestExtractNotAnAnswerStripsTheMarker(t *testing.T) {
+	cases := []struct {
+		in          string
+		wantText    string
+		wantFlagged bool
+	}{
+		{"That sounds like a lot to carry.", "That sounds like a lot to carry.", false},
+		{notAnAnswerMarker, "", true},
+		{"Hm. " + notAnAnswerMarker, "Hm. ", true},
+	}
+	for _, tc := range cases {
+		text, flagged := extractNotAnAnswer(tc.in)
+		if text != tc.wantText || flagged != tc.wantFlagged {
+			t.Errorf("extractNotAnAnswer(%q) = (%q, %v), want (%q, %v)",
+				tc.in, text, flagged, tc.wantText, tc.wantFlagged)
+		}
+		if strings.Contains(sanitizeMirror(text), notAnAnswerMarker) {
+			t.Errorf("the marker survived sanitizing for input %q", tc.in)
+		}
+	}
+}
+
 // The stage length is fixed by the server. Any wording that hands the model a
 // say in it, or lets it write its own invitation, is the confound this
 // structure exists to remove.
@@ -215,86 +275,6 @@ func TestHostReplyInvitationSurvivesSanitizing(t *testing.T) {
 	got := hostReply(sanitizeMirror(long), 1)
 	if !strings.HasSuffix(got, mirrorInvitation) {
 		t.Errorf("hostReply lost the invitation after a clamped acknowledgement: %q", got)
-	}
-}
-
-// The expensive failure. Telling someone who answered honestly that they were
-// not taking it seriously is worse than letting a junk answer through, and
-// "having nothing to disclose is fine" is a design commitment, not a nicety.
-// Every case here must be accepted.
-func TestLooksLikeGarbageAcceptsRealAnswers(t *testing.T) {
-	accepted := []string{
-		"no",
-		"No.",
-		"Nope",
-		"nothing",
-		"n/a",
-		"N/A",
-		"not really",
-		"I'd rather not say",
-		"idk",
-		"Nothing comes to mind.",
-		"Burnout.",
-		"Deadlines",
-		"The workload.",
-		"i felt like a fraud in the last meeting",
-		"Ei", // a one-word answer in another language
-		"My PhD supervisor never replies to email, so everything stalls.",
-		"work :(",
-		"I hit a wall last week and said nothing.",
-	}
-	for _, text := range accepted {
-		if looksLikeGarbage(text) {
-			t.Errorf("looksLikeGarbage(%q) = true, want false: this is a real answer", text)
-		}
-	}
-}
-
-// The nudge has to do two things at once: say plainly that the submission was
-// not a real answer, and make clear that having nothing to share is not what is
-// being objected to. Losing the second half turns a data-quality prompt into
-// pressure to disclose, in a study about disclosure under evaluative anxiety.
-func TestMirrorNudgeIsDirectAndStillAllowsHavingNothingToSay(t *testing.T) {
-	if !strings.Contains(mirrorNudge, "seriously") {
-		t.Errorf("the nudge does not name the problem: %q", mirrorNudge)
-	}
-	if !strings.Contains(mirrorNudge, "Having nothing to share is completely fine") {
-		t.Errorf("the nudge no longer says that having nothing to share is fine: %q", mirrorNudge)
-	}
-}
-
-func TestLooksLikeGarbageCatchesUnreadableSubmissions(t *testing.T) {
-	rejected := []string{
-		"asdf",
-		"ASDF",
-		"asdfgh",
-		"qwerty",
-		"zxcv",
-		"blabla",
-		"blablabla",
-		"hahaha",
-		"aaaaaaa",
-		".....",
-		"...",
-		"1234",
-		"!!!",
-		"jkl",
-		"   ",
-	}
-	for _, text := range rejected {
-		if !looksLikeGarbage(text) {
-			t.Errorf("looksLikeGarbage(%q) = false, want true: this carries no answer", text)
-		}
-	}
-}
-
-// One word-like token anywhere is enough to accept the whole submission, so a
-// real answer with junk in it is never rejected.
-func TestLooksLikeGarbageAcceptsMixedSubmissions(t *testing.T) {
-	for _, text := range []string{"asdf sorry, the workload", "blabla I mean the deadlines"} {
-		if looksLikeGarbage(text) {
-			t.Errorf("looksLikeGarbage(%q) = true, want false: it contains a real answer", text)
-		}
 	}
 }
 
