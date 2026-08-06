@@ -177,6 +177,18 @@ and this implementation disagree, are tracked there rather than in this file. As
       first try in testing and fixed by labelling every speaker. It could only ever happen in `2-1`
       and `3-1`, so it did not cancel out across the design. **Any transcript collected before
       2026-08-06 may contain it**, though only test rows exist so far.
+- [x] **Done: peers made more salient without changing the disclosure dose.** Each peer cell now runs
+      a two-beat exchange (peer speaks, Vieno answers that peer by name, a peer answers her) instead
+      of a single round of quotations. Disclosure word counts are unchanged and still matched between
+      the peer cells; the same content is simply split across two shorter peer turns. Vieno's
+      hand-off also varies by stage rather than repeating one formula, while the sentence that hands
+      the participant the floor stays byte-identical across all three cells.
+- [ ] **The baseline is now much thinner than the peer cells, on purpose.** Stage 2 carries roughly 32
+      words of bot text in `1-1` against roughly 110 in each peer cell, up from 32 against 75. Padding
+      the baseline was considered and rejected on 2026-08-06, because it would make the host behave
+      differently by condition. The consequence is that a condition effect is an effect of the peer
+      cells as a package (peers present, peers disclosing, more conversation), and the design cannot
+      separate those three. **This needs a sentence in the limitations section of the paper.**
 - [ ] **There is no manipulation check.** Nothing asks what the participant made of the other chat
       members: whether they noticed the peers disclosed, whether they took them for people or for
       software, or how many others they recall. A reviewer of a paper about multi-agent personas will

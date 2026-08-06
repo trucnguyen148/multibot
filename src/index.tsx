@@ -137,25 +137,40 @@ if (!isLocal && !API_BASE_URL) {
 //
 // Where the stage ends is not read off this reply. Both sides derive it from
 // the turn index, so a request that never completes cannot shorten a stage.
+const MIRROR_MARKS = ['generated', 'declined', 'nudge', 'unreadable'] as const;
+
 const requestMirror = async (
   sessionId: string,
   userText: string,
   stage: string,
   history: { sender: string; text: string; isUser: boolean }[],
   turnIndex: number,
-  declined: boolean
-): Promise<{ text: string; mirror: 'generated' | 'fallback' | 'declined' }> => {
+  declined: boolean,
+  retryCount: number
+): Promise<{
+  text: string;
+  mirror: 'generated' | 'fallback' | 'declined' | 'nudge' | 'unreadable';
+  retry: boolean;
+}> => {
   const response = await fetch(`${API_BASE_URL}/api/mirror`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sessionId, stage, text: userText, history, turnIndex, declined }),
+    body: JSON.stringify({
+      sessionId,
+      stage,
+      text: userText,
+      history,
+      turnIndex,
+      declined,
+      retryCount,
+    }),
   });
   if (!response.ok) throw new Error('mirror unavailable');
   const payload = await response.json();
   return {
     text: typeof payload.text === 'string' ? payload.text : 'Thanks for sharing that.',
-    mirror:
-      payload.mirror === 'generated' || payload.mirror === 'declined' ? payload.mirror : 'fallback',
+    mirror: MIRROR_MARKS.includes(payload.mirror) ? payload.mirror : 'fallback',
+    retry: payload.retry === true,
   };
 };
 
@@ -483,8 +498,16 @@ function App() {
                 // the offline fallback path where nothing is being saved anyway.
                 requestMirror={
                   sessionId
-                    ? (userText, chatStage, history, turnIndex, declined) =>
-                        requestMirror(sessionId, userText, chatStage, history, turnIndex, declined)
+                    ? (userText, chatStage, history, turnIndex, declined, retryCount) =>
+                        requestMirror(
+                          sessionId,
+                          userText,
+                          chatStage,
+                          history,
+                          turnIndex,
+                          declined,
+                          retryCount
+                        )
                     : undefined
                 }
                 onChatComplete={async (transcript, stage1Score, stage2Score, stage3Score) => {

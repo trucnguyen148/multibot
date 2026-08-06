@@ -83,6 +83,10 @@ type transcriptMetrics struct {
 	// the optional invitation and adding nothing. Zero to three, and a measure
 	// in its own right rather than only a health signal.
 	Declines int
+	// Nudges is how many submissions carried nothing readable and were sent
+	// back. A row with several is a candidate for exclusion on data quality,
+	// which is the whole reason the count is surfaced rather than just logged.
+	Nudges int
 	// StageWords is participant words keyed by the chat sub-state
 	// (STATE_CHAT_STAGE_1/2/3, STATE_CLOSING).
 	StageWords map[string]int
@@ -121,6 +125,10 @@ func metricsFor(raw string) transcriptMetrics {
 			metrics.MirrorFallback++
 		case "declined":
 			metrics.Declines++
+		case "nudge", "unreadable":
+			// Both marks mean the same thing for exclusion purposes: the
+			// participant sent something with no answer in it.
+			metrics.Nudges++
 		}
 	}
 	return metrics
@@ -144,6 +152,7 @@ type adminSessionSummary struct {
 	MirrorGenerated  int       `json:"mirror_generated"`
 	MirrorFallback   int       `json:"mirror_fallback"`
 	Declines         int       `json:"declines"`
+	Nudges           int       `json:"nudges"`
 	HasPostSurvey    bool      `json:"has_post_survey"`
 }
 
@@ -223,6 +232,7 @@ func summarize(row adminRow) adminSessionSummary {
 		MirrorGenerated:  metrics.MirrorGenerated,
 		MirrorFallback:   metrics.MirrorFallback,
 		Declines:         metrics.Declines,
+		Nudges:           metrics.Nudges,
 		HasPostSurvey:    strings.TrimSpace(row.postSurvey) != "",
 	}
 	if !row.updatedAt.IsZero() && !row.createdAt.IsZero() {

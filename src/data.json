@@ -1,47 +1,47 @@
 {
   "conditions": {
     "1-1": {
-      "label": "Host only (no peer disclosure)",
+      "label": "Host only, no modelled disclosure",
       "stages": {
         "STATE_CHAT_STAGE_1": [
           {
             "sender": "Vieno",
-            "tag": "open",
-            "text": "Hi [User's Name], thanks for joining today. I'm Vieno, and I'll be hosting this chat. We'll spend a short time talking through everyday work and study pressures, and nothing said here is used against you, it's only recorded for research purposes."
+            "text": "Hi [User's Name], thanks for joining today. I'm Vieno, and I'll be hosting this chat. We'll spend a short time talking through everyday work and study pressures, and nothing said here is used against you, it's only recorded for research purposes.",
+            "tag": "open"
           },
           {
             "sender": "Vieno",
-            "tag": "question",
-            "text": "Let's start with the everyday stuff. What are the typical challenges you face in your daily professional or academic life?"
+            "text": "Let's start with the everyday stuff. What are the typical challenges you face in your daily professional or academic life?",
+            "tag": "question"
           },
           {
             "sender": "Vieno",
-            "tag": "ack",
-            "text": "Over to you, [User's Name]."
+            "text": "[User's Name], what does an ordinary week look like for you?",
+            "tag": "ack"
           }
         ],
         "STATE_CHAT_STAGE_2": [
           {
             "sender": "Vieno",
-            "tag": "question",
-            "text": "Let's go a bit deeper. Is there a specific moment recently where you felt overwhelmed by expectations but felt you couldn't share it?"
+            "text": "Let's go a bit deeper. Is there a specific moment recently where you felt overwhelmed by expectations but felt you couldn't share it?",
+            "tag": "question"
           },
           {
             "sender": "Vieno",
-            "tag": "ack",
-            "text": "Take your time, [User's Name]."
+            "text": "[User's Name], is there a moment like that for you?",
+            "tag": "ack"
           }
         ],
         "STATE_CHAT_STAGE_3": [
           {
             "sender": "Vieno",
-            "tag": "question",
-            "text": "We've covered a lot of ground. Is there a specific professional or academic challenge you'd feel comfortable going into?"
+            "text": "We've covered a lot of ground. Is there a specific professional or academic challenge you'd feel comfortable going into?",
+            "tag": "question"
           },
           {
             "sender": "Vieno",
-            "tag": "ack",
-            "text": "Over to you, [User's Name], whenever you're ready."
+            "text": "Take your time, [User's Name], whenever you're ready.",
+            "tag": "ack"
           }
         ]
       }
@@ -52,67 +52,97 @@
         "STATE_CHAT_STAGE_1": [
           {
             "sender": "Vieno",
-            "tag": "open",
-            "text": "Hi everyone, thanks for joining today. I'm Vieno, and I'll be hosting this chat. We'll spend a short time talking through everyday work and study pressures, and nothing said here is used against you, it's only recorded for research purposes."
+            "text": "Hi everyone, thanks for joining today. I'm Vieno, and I'll be hosting this chat. We'll spend a short time talking through everyday work and study pressures, and nothing said here is used against you, it's only recorded for research purposes.",
+            "tag": "open"
           },
           {
             "sender": "Vieno",
-            "tag": "open",
-            "text": "Sam, would you like to say a quick hello before we start?"
+            "text": "Sam, would you like to say a quick hello before we start?",
+            "tag": "open"
           },
           {
             "sender": "Sam",
-            "tag": "peer-neutral",
-            "text": "Hey, glad to be here."
+            "text": "Hey, glad to be here.",
+            "tag": "peer-neutral"
           },
           {
             "sender": "Vieno",
-            "tag": "question",
-            "text": "Let's start with the everyday stuff. What are the typical challenges you face in your daily professional or academic life?"
+            "text": "Let's start with the everyday stuff. What are the typical challenges you face in your daily professional or academic life?",
+            "tag": "question"
           },
           {
             "sender": "Sam",
-            "tag": "peer-neutral",
-            "text": "For me it's mostly just juggling a lot of small tasks and keeping the calendar under control."
+            "text": "For me it's mostly juggling a lot of small tasks and keeping the calendar under control.",
+            "tag": "peer-neutral"
           },
           {
             "sender": "Vieno",
-            "tag": "ack",
-            "text": "Thanks Sam. How about you, [User's Name]?"
+            "text": "That sounds familiar, Sam. Does it get worse at particular times?",
+            "tag": "facilitation"
+          },
+          {
+            "sender": "Sam",
+            "text": "End of term mostly, when everything lands in the same week.",
+            "tag": "peer-neutral"
+          },
+          {
+            "sender": "Vieno",
+            "text": "Thanks Sam. [User's Name], what does an ordinary week look like for you?",
+            "tag": "ack"
           }
         ],
         "STATE_CHAT_STAGE_2": [
           {
             "sender": "Vieno",
-            "tag": "question",
-            "text": "Let's go a bit deeper. Is there a specific moment recently where you felt overwhelmed by expectations but felt you couldn't share it?"
+            "text": "Let's go a bit deeper. Is there a specific moment recently where you felt overwhelmed by expectations but felt you couldn't share it?",
+            "tag": "question"
           },
           {
             "sender": "Sam",
-            "tag": "disclosure",
-            "text": "Honestly, the biggest thing for me lately is the sheer volume of work. I hit a wall last week and never said anything to my supervisor, because I was worried it would look like I can't handle the job."
+            "text": "Honestly, the biggest thing for me lately is the sheer volume of work. I hit a wall last week and never said anything to my supervisor.",
+            "tag": "disclosure"
           },
           {
             "sender": "Vieno",
-            "tag": "ack",
-            "text": "Thank you for being open about that, Sam. How about you, [User's Name]?"
+            "text": "Thank you for saying that, Sam. What stopped you from mentioning it?",
+            "tag": "facilitation"
+          },
+          {
+            "sender": "Sam",
+            "text": "I suppose I was worried it would look like I can't handle the job.",
+            "tag": "disclosure"
+          },
+          {
+            "sender": "Vieno",
+            "text": "That is not an easy thing to put into words. [User's Name], is there a moment like that for you?",
+            "tag": "ack"
           }
         ],
         "STATE_CHAT_STAGE_3": [
           {
             "sender": "Vieno",
-            "tag": "question",
-            "text": "We've covered a lot of ground. Is there a specific professional or academic challenge you'd feel comfortable going into?"
+            "text": "We've covered a lot of ground. Is there a specific professional or academic challenge you'd feel comfortable going into?",
+            "tag": "question"
           },
           {
             "sender": "Sam",
-            "tag": "disclosure",
-            "text": "It's exhausting pretending everything is fine all the time. Talking about it like this actually makes me feel less alone with it."
+            "text": "It's exhausting pretending everything is fine all the time.",
+            "tag": "disclosure"
           },
           {
             "sender": "Vieno",
-            "tag": "ack",
-            "text": "Thank you, Sam. How about you, [User's Name]?"
+            "text": "Sam, has talking about it here changed that at all?",
+            "tag": "facilitation"
+          },
+          {
+            "sender": "Sam",
+            "text": "A bit, actually. Talking about it like this makes me feel less alone with it.",
+            "tag": "disclosure"
+          },
+          {
+            "sender": "Vieno",
+            "text": "Thank you, Sam. Take your time, [User's Name], whenever you're ready.",
+            "tag": "ack"
           }
         ]
       }
@@ -123,87 +153,107 @@
         "STATE_CHAT_STAGE_1": [
           {
             "sender": "Vieno",
-            "tag": "open",
-            "text": "Hi everyone, thanks for joining today. I'm Vieno, and I'll be hosting this chat. We'll spend a short time talking through everyday work and study pressures, and nothing said here is used against you, it's only recorded for research purposes."
+            "text": "Hi everyone, thanks for joining today. I'm Vieno, and I'll be hosting this chat. We'll spend a short time talking through everyday work and study pressures, and nothing said here is used against you, it's only recorded for research purposes.",
+            "tag": "open"
           },
           {
             "sender": "Vieno",
-            "tag": "open",
-            "text": "Sam, Charlie, would you like to say a quick hello before we start?"
+            "text": "Sam, Charlie, would you like to say a quick hello before we start?",
+            "tag": "open"
           },
           {
             "sender": "Sam",
-            "tag": "peer-neutral",
-            "text": "Hey, glad to be here."
+            "text": "Hey, glad to be here.",
+            "tag": "peer-neutral"
           },
           {
             "sender": "Charlie",
-            "tag": "peer-neutral",
-            "text": "Hi all."
+            "text": "Hi all.",
+            "tag": "peer-neutral"
           },
           {
             "sender": "Vieno",
-            "tag": "question",
-            "text": "Let's start with the everyday stuff. What are the typical challenges you face in your daily professional or academic life?"
+            "text": "Let's start with the everyday stuff. What are the typical challenges you face in your daily professional or academic life?",
+            "tag": "question"
           },
           {
             "sender": "Sam",
-            "tag": "peer-neutral",
-            "text": "For me it's mostly just juggling a lot of small tasks."
+            "text": "For me it's mostly juggling a lot of small tasks.",
+            "tag": "peer-neutral"
           },
           {
             "sender": "Charlie",
-            "tag": "peer-neutral",
-            "text": "Same, mostly keeping the calendar under control."
+            "text": "Same, mostly keeping the calendar under control.",
+            "tag": "peer-neutral"
           },
           {
             "sender": "Vieno",
-            "tag": "ack",
-            "text": "Thanks both. How about you, [User's Name]?"
+            "text": "That sounds familiar. Charlie, does it get worse at particular times?",
+            "tag": "facilitation"
+          },
+          {
+            "sender": "Charlie",
+            "text": "End of term mostly, when everything lands in the same week.",
+            "tag": "peer-neutral"
+          },
+          {
+            "sender": "Vieno",
+            "text": "Thanks both. [User's Name], what does an ordinary week look like for you?",
+            "tag": "ack"
           }
         ],
         "STATE_CHAT_STAGE_2": [
           {
             "sender": "Vieno",
-            "tag": "question",
-            "text": "Let's go a bit deeper. Is there a specific moment recently where you felt overwhelmed by expectations but felt you couldn't share it?"
+            "text": "Let's go a bit deeper. Is there a specific moment recently where you felt overwhelmed by expectations but felt you couldn't share it?",
+            "tag": "question"
           },
           {
             "sender": "Sam",
-            "tag": "disclosure",
-            "text": "Honestly, the biggest thing for me lately is the sheer volume of work. I hit a wall last week and never said anything to my supervisor."
-          },
-          {
-            "sender": "Charlie",
-            "tag": "disclosure",
-            "text": "Same here, and I keep quiet because it would look like I can't handle the job."
+            "text": "Honestly, the biggest thing for me lately is the sheer volume of work. I hit a wall last week and never said anything to my supervisor.",
+            "tag": "disclosure"
           },
           {
             "sender": "Vieno",
-            "tag": "ack",
-            "text": "Thank you both for being open about that. How about you, [User's Name]?"
+            "text": "Thank you for saying that, Sam. Charlie, what stops you from mentioning it?",
+            "tag": "facilitation"
+          },
+          {
+            "sender": "Charlie",
+            "text": "Same here. I keep quiet because it would look like I can't handle the job.",
+            "tag": "disclosure"
+          },
+          {
+            "sender": "Vieno",
+            "text": "That is not an easy thing to put into words. [User's Name], is there a moment like that for you?",
+            "tag": "ack"
           }
         ],
         "STATE_CHAT_STAGE_3": [
           {
             "sender": "Vieno",
-            "tag": "question",
-            "text": "We've covered a lot of ground. Is there a specific professional or academic challenge you'd feel comfortable going into?"
+            "text": "We've covered a lot of ground. Is there a specific professional or academic challenge you'd feel comfortable going into?",
+            "tag": "question"
           },
           {
             "sender": "Sam",
-            "tag": "disclosure",
-            "text": "It's exhausting pretending everything is fine all the time."
-          },
-          {
-            "sender": "Charlie",
-            "tag": "disclosure",
-            "text": "Yeah. Talking about it like this actually makes me feel less alone with it."
+            "text": "It's exhausting pretending everything is fine all the time.",
+            "tag": "disclosure"
           },
           {
             "sender": "Vieno",
-            "tag": "ack",
-            "text": "Thank you both. How about you, [User's Name]?"
+            "text": "Charlie, has talking about it here changed that at all?",
+            "tag": "facilitation"
+          },
+          {
+            "sender": "Charlie",
+            "text": "A bit, yeah. Talking about it like this makes me feel less alone with it.",
+            "tag": "disclosure"
+          },
+          {
+            "sender": "Vieno",
+            "text": "Thank you both. Take your time, [User's Name], whenever you're ready.",
+            "tag": "ack"
           }
         ]
       }

@@ -218,6 +218,86 @@ func TestHostReplyInvitationSurvivesSanitizing(t *testing.T) {
 	}
 }
 
+// The expensive failure. Telling someone who answered honestly that they were
+// not taking it seriously is worse than letting a junk answer through, and
+// "having nothing to disclose is fine" is a design commitment, not a nicety.
+// Every case here must be accepted.
+func TestLooksLikeGarbageAcceptsRealAnswers(t *testing.T) {
+	accepted := []string{
+		"no",
+		"No.",
+		"Nope",
+		"nothing",
+		"n/a",
+		"N/A",
+		"not really",
+		"I'd rather not say",
+		"idk",
+		"Nothing comes to mind.",
+		"Burnout.",
+		"Deadlines",
+		"The workload.",
+		"i felt like a fraud in the last meeting",
+		"Ei", // a one-word answer in another language
+		"My PhD supervisor never replies to email, so everything stalls.",
+		"work :(",
+		"I hit a wall last week and said nothing.",
+	}
+	for _, text := range accepted {
+		if looksLikeGarbage(text) {
+			t.Errorf("looksLikeGarbage(%q) = true, want false: this is a real answer", text)
+		}
+	}
+}
+
+// The nudge has to do two things at once: say plainly that the submission was
+// not a real answer, and make clear that having nothing to share is not what is
+// being objected to. Losing the second half turns a data-quality prompt into
+// pressure to disclose, in a study about disclosure under evaluative anxiety.
+func TestMirrorNudgeIsDirectAndStillAllowsHavingNothingToSay(t *testing.T) {
+	if !strings.Contains(mirrorNudge, "seriously") {
+		t.Errorf("the nudge does not name the problem: %q", mirrorNudge)
+	}
+	if !strings.Contains(mirrorNudge, "Having nothing to share is completely fine") {
+		t.Errorf("the nudge no longer says that having nothing to share is fine: %q", mirrorNudge)
+	}
+}
+
+func TestLooksLikeGarbageCatchesUnreadableSubmissions(t *testing.T) {
+	rejected := []string{
+		"asdf",
+		"ASDF",
+		"asdfgh",
+		"qwerty",
+		"zxcv",
+		"blabla",
+		"blablabla",
+		"hahaha",
+		"aaaaaaa",
+		".....",
+		"...",
+		"1234",
+		"!!!",
+		"jkl",
+		"   ",
+	}
+	for _, text := range rejected {
+		if !looksLikeGarbage(text) {
+			t.Errorf("looksLikeGarbage(%q) = false, want true: this carries no answer", text)
+		}
+	}
+}
+
+// One word-like token anywhere is enough to accept the whole submission, so a
+// real answer with junk in it is never rejected.
+func TestLooksLikeGarbageAcceptsMixedSubmissions(t *testing.T) {
+	for _, text := range []string{"asdf sorry, the workload", "blabla I mean the deadlines"} {
+		if looksLikeGarbage(text) {
+			t.Errorf("looksLikeGarbage(%q) = true, want false: it contains a real answer", text)
+		}
+	}
+}
+
 func TestSanitizeMirrorCollapsesToOneSentence(t *testing.T) {
 	cases := []struct {
 		name string

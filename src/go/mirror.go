@@ -32,6 +32,26 @@ const mirrorInvitation = "If there is anything else you would like to add, feel 
 // cell where the host does not close the stage.
 const mirrorDeclineAck = "That is completely fine, thank you."
 
+// mirrorNudge answers a submission with no readable content in it. It names the
+// problem rather than apologising for failing to understand, because "sorry, I
+// did not follow" invites the participant to repeat the same thing.
+//
+// The last sentence is load-bearing and must survive any rewording: having
+// nothing to say is a valid answer in a disclosure study, and this must not read
+// as objecting to that. It objects to "asdf", never to "no".
+const mirrorNudge = "That does not look like a serious answer. Please take the conversation seriously and reply in your own words. Having nothing to share is completely fine, just say so."
+
+// mirrorUnreadableAck closes a turn the participant never really used, once the
+// nudge has been spent. There is nothing in the submission to mirror, so it is
+// not sent for generation: doing so pays a third party to compose a thoughtful
+// reflection of "asdf" and puts a mirrored nonsense sentence in the transcript.
+const mirrorUnreadableAck = "All right."
+
+// A participant is nudged at most this many times per turn. Past that their
+// answer is taken as given, whatever it says, so nobody can be trapped in a
+// loop and the stage still runs the same two turns for everyone.
+const maxMirrorNudgesPerTurn = 1
+
 // The generation parameters are study design rather than tuning knobs. Changing
 // the model partway through recruitment splits the sample into two studies, so
 // they are constants here instead of environment variables that could be edited
@@ -183,6 +203,135 @@ func mirrorSystemPrompt(present []string, participant string) string {
 		- Do not bring up specific topics that are not mentioned by the participant themselves.
 		- Refrain from giving any personal opinions or advice, praise or reflection, even if asked directly.
 		`, who)
+}
+
+// Short answers that mean something. A disclosure study must never treat "no"
+// as a failure to engage, so these are checked before any heuristic runs.
+var seriousShortAnswers = map[string]bool{
+	"no": true, "nope": true, "nah": true, "none": true, "nothing": true,
+	"n/a": true, "na": true, "nil": true, "-": true, "not really": true,
+	"no comment": true, "idk": true, "i dont know": true, "i don't know": true,
+	"dont know": true, "don't know": true, "rather not": true, "prefer not to say": true,
+	"nothing comes to mind": true, "cant think of one": true, "can't think of one": true,
+}
+
+var keyboardRows = []string{"qwertyuiop", "asdfghjkl", "zxcvbnm", "1234567890"}
+
+// isKeyboardRun reports whether a token is just a run along one keyboard row,
+// forwards or backwards. "asdf" and "qwerty" contain vowels and would otherwise
+// read as words.
+func isKeyboardRun(token string) bool {
+	if len(token) < 3 {
+		return false
+	}
+	reversed := []rune(token)
+	for i, j := 0, len(reversed)-1; i < j; i, j = i+1, j-1 {
+		reversed[i], reversed[j] = reversed[j], reversed[i]
+	}
+	for _, row := range keyboardRows {
+		if strings.Contains(row, token) || strings.Contains(row, string(reversed)) {
+			return true
+		}
+	}
+	return false
+}
+
+// isRepeatedUnit reports whether a token is one short unit repeated, which is
+// what "blabla", "hahaha" and "lalala" have in common and what distinguishes
+// them from words.
+func isRepeatedUnit(token string) bool {
+	if len(token) < 4 {
+		return false
+	}
+	for unit := 1; unit <= len(token)/2; unit++ {
+		if unit > 4 || len(token)%unit != 0 {
+			continue
+		}
+		repeated := true
+		for i := unit; i < len(token); i++ {
+			if token[i] != token[i-unit] {
+				repeated = false
+				break
+			}
+		}
+		if repeated {
+			return true
+		}
+	}
+	return false
+}
+
+func hasVowel(token string) bool {
+	return strings.ContainsAny(token, "aeiouy")
+}
+
+// hasLongRun reports three or more identical letters in a row, as in "aaargh"
+// typed as "aaaaaa".
+func hasLongRun(token string) bool {
+	run := 1
+	for i := 1; i < len(token); i++ {
+		if token[i] == token[i-1] {
+			run++
+			if run >= 3 {
+				return true
+			}
+			continue
+		}
+		run = 1
+	}
+	return false
+}
+
+// isWordLike is deliberately generous. Anything that could plausibly be a word
+// counts as one, because the cost of missing real garbage is one uninformative
+// turn in the data, while the cost of a false positive is telling a participant
+// who answered honestly that they were not taking it seriously.
+func isWordLike(token string) bool {
+	return len(token) >= 2 &&
+		hasVowel(token) &&
+		!hasLongRun(token) &&
+		!isKeyboardRun(token) &&
+		!isRepeatedUnit(token)
+}
+
+// looksLikeGarbage reports whether a submission contains no readable content at
+// all: keyboard mash, a single character held down, bare punctuation or digits.
+// It is a data-quality gate, not a judgment about what the participant said, and
+// it is deliberately deterministic rather than a model call, so every
+// participant meets exactly the same rule rather than one that varies per
+// session.
+//
+// Length is never a signal on its own. "Burnout." is a complete answer and so is
+// "no".
+func looksLikeGarbage(text string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(text))
+	if normalized == "" {
+		return true
+	}
+	if seriousShortAnswers[strings.TrimRight(normalized, ".!?")] {
+		return false
+	}
+
+	var cleaned strings.Builder
+	for _, r := range normalized {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '\'':
+			cleaned.WriteRune(r)
+		default:
+			cleaned.WriteRune(' ')
+		}
+	}
+
+	tokens := strings.Fields(cleaned.String())
+	if len(tokens) == 0 {
+		return true
+	}
+	for _, token := range tokens {
+		if isWordLike(token) {
+			return false
+		}
+	}
+	return true
 }
 
 // clampMirrorInput bounds what leaves the server. Oversized text is trimmed
@@ -434,6 +583,10 @@ func (app *App) mirrorHandler(w http.ResponseWriter, r *http.Request) {
 		// Declined is set when the participant took the invitation and chose to
 		// add nothing. There is no text to acknowledge, so nothing is generated.
 		Declined bool `json:"declined"`
+		// RetryCount is how many times this same turn has already been nudged.
+		// The client owns it because a nudge is not a turn and leaves no trace in
+		// the session; sending it back caps the loop at maxMirrorNudgesPerTurn.
+		RetryCount int `json:"retryCount"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -476,6 +629,39 @@ func (app *App) mirrorHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	text := clampMirrorInput(payload.Text)
+
+	// A submission with nothing readable in it is answered by asking again, and
+	// the turn is not spent. Every participant still gets exactly the same two
+	// turns per stage; someone who mashed the keyboard just gets one more chance
+	// to use the first of them. Checked before generation, since there is
+	// nothing here worth sending to a third party or paying for.
+	if !payload.Declined && looksLikeGarbage(text) {
+		if payload.RetryCount < maxMirrorNudgesPerTurn {
+			app.logger.Info("nudging an unreadable submission",
+				"sessionId", payload.SessionID, "stage", payload.Stage, "turnIndex", payload.TurnIndex)
+			writeJSON(w, map[string]any{
+				"text":    mirrorNudge,
+				"mirror":  "nudge",
+				"advance": false,
+				"retry":   true,
+			}, app.logger)
+			return
+		}
+
+		// Asked once and still nothing readable. Take the turn as spent rather
+		// than argue, and close it with a fixed line rather than asking a model
+		// to reflect on "asdf". The mark is what makes the row findable when
+		// deciding exclusions.
+		app.logger.Info("accepting an unreadable submission after the nudge",
+			"sessionId", payload.SessionID, "stage", payload.Stage, "turnIndex", payload.TurnIndex)
+		writeJSON(w, map[string]any{
+			"text":    hostReply(mirrorUnreadableAck, payload.TurnIndex),
+			"mirror":  "unreadable",
+			"advance": advance,
+		}, app.logger)
+		return
+	}
+
 	if text == "" {
 		writeJSON(w, map[string]any{
 			"text":    hostReply(mirrorFallback, payload.TurnIndex),

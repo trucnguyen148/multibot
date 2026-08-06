@@ -59,7 +59,7 @@ interface ChatMessage {
   // generated text from script, a real acknowledgement from a timed-out one,
   // and a stage the participant closed by declining the invitation, when the
   // transcripts are coded.
-  mirror?: 'generated' | 'fallback' | 'declined';
+  mirror?: 'generated' | 'fallback' | 'declined' | 'nudge' | 'unreadable';
 }
 
 // What the host says when the backend cannot be reached at all. The backend has
@@ -73,7 +73,10 @@ const MIRROR_DECLINE_ACK = 'That is completely fine, thank you.';
 
 interface MirrorReply {
   text: string;
-  mirror: 'generated' | 'fallback' | 'declined';
+  mirror: 'generated' | 'fallback' | 'declined' | 'nudge' | 'unreadable';
+  // True when the submission carried no readable answer and the host asked
+  // again. The turn is not spent, so the participant keeps it.
+  retry?: boolean;
 }
 
 // What playMirror sends as `history`: the conversation so far, oldest first,
@@ -100,7 +103,8 @@ interface ChatInterfaceProps {
     stage: string,
     history: MirrorHistoryTurn[],
     turnIndex: number,
-    declined: boolean
+    declined: boolean,
+    retryCount: number
   ) => Promise<MirrorReply>;
   onChatComplete: (
     transcript: ChatMessage[],
@@ -154,6 +158,10 @@ export const ChatInterface = ({
   // invitation, and this component reads it to decide whether the comfort
   // check-in follows.
   const turnsThisStageRef = useRef<number>(0);
+  // How many times the current turn has already been sent back as unreadable.
+  // Sent to the server, which stops nudging once it reaches the cap, so nobody
+  // can be held in a loop by a detector that disagrees with them.
+  const nudgesThisTurnRef = useRef<number>(0);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -175,6 +183,7 @@ export const ChatInterface = ({
     let isCancelled = false;
     startedStages[stageKey] = true;
     turnsThisStageRef.current = 0;
+    nudgesThisTurnRef.current = 0;
     setCanDecline(false);
 
     const playBotScripts = async () => {
@@ -221,8 +230,9 @@ export const ChatInterface = ({
     userText: string,
     stage: string,
     turnIndex: number,
-    declined = false
-  ): Promise<void> => {
+    declined = false,
+    retryCount = 0
+  ): Promise<MirrorReply> => {
     // What the host says when the request never reaches the server. A decline
     // needs nothing generated, so offline it is not a degraded reply at all and
     // is marked as the decline it is rather than as a fallback.
@@ -253,7 +263,7 @@ export const ChatInterface = ({
     let reply: MirrorReply = offline;
     if (requestMirror) {
       try {
-        reply = await requestMirror(userText, stage, history, turnIndex, declined);
+        reply = await requestMirror(userText, stage, history, turnIndex, declined, retryCount);
       } catch {
         // Keep the offline line: the network never reached the server at all.
         reply = offline;
@@ -281,6 +291,8 @@ export const ChatInterface = ({
         mirror: reply.mirror,
       },
     ]);
+
+    return reply;
   };
 
   const handleUserSubmit = async () => {
@@ -304,9 +316,31 @@ export const ChatInterface = ({
     // the host's acknowledgement carrying one invitation to add more, their
     // optional second turn, the host's closing acknowledgement. Nothing about
     // what was written, or about whether generation succeeded, changes that.
+    //
+    // The turn counter is advanced only once the submission is known not to be
+    // a nudge. A nudge asks the same turn again rather than spending it, so a
+    // participant who mashed the keyboard still gets the same two turns as
+    // everyone else instead of losing one of them to "asdf".
     const turnIndex = turnsThisStageRef.current + 1;
+    const reply = await playMirror(
+      userMsg.text,
+      internalStage,
+      turnIndex,
+      false,
+      nudgesThisTurnRef.current
+    );
+
+    if (reply.retry) {
+      nudgesThisTurnRef.current += 1;
+      setAwaitingUser(true);
+      // Restore whichever turn they were on, so a nudge on the optional second
+      // turn does not quietly remove their way of declining it.
+      setCanDecline(turnsThisStageRef.current >= MIRROR_TURNS_PER_STAGE - 1);
+      return;
+    }
+
     turnsThisStageRef.current = turnIndex;
-    await playMirror(userMsg.text, internalStage, turnIndex);
+    nudgesThisTurnRef.current = 0;
     if (turnIndex >= MIRROR_TURNS_PER_STAGE) {
       askForComfort(internalStage);
     } else {

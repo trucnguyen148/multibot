@@ -103,6 +103,77 @@ func TestDisclosureVolumeMatchedBetweenPeerConditions(t *testing.T) {
 	}
 }
 
+// lastSentence returns the final sentence of a turn, which is the part addressed
+// to the participant in every hand-off.
+func lastSentence(text string) string {
+	trimmed := strings.TrimSpace(text)
+	body := strings.TrimSuffix(trimmed, ".")
+	body = strings.TrimSuffix(body, "?")
+	body = strings.TrimSuffix(body, "!")
+	if cut := strings.LastIndexAny(body, ".?!"); cut != -1 {
+		return strings.TrimSpace(trimmed[cut+1:])
+	}
+	return trimmed
+}
+
+// Vieno now says more, and says different things to different peers, so the one
+// sentence that reaches the participant has to be held still. Everything before
+// it is addressed to the peers and necessarily differs, since the baseline has
+// no peers to address. If this fails, the participant was invited to speak in
+// different words depending on their condition, which is the same confound
+// TestParticipantQuestionIsIdenticalAcrossConditions exists to prevent.
+func TestHandoffToParticipantIsIdenticalAcrossConditions(t *testing.T) {
+	data := loadScripts(t)
+
+	for _, stage := range []string{"STATE_CHAT_STAGE_1", "STATE_CHAT_STAGE_2", "STATE_CHAT_STAGE_3"} {
+		expected := ""
+		for _, condition := range []string{"1-1", "2-1", "3-1"} {
+			turns := data.Conditions[condition].Stages[stage]
+			if len(turns) == 0 {
+				t.Fatalf("%s/%s: no turns", condition, stage)
+			}
+			last := turns[len(turns)-1]
+			if last.Tag != "ack" {
+				t.Errorf("%s/%s: final turn is tagged %q, want ack", condition, stage, last.Tag)
+				continue
+			}
+			got := lastSentence(last.Text)
+			if expected == "" {
+				expected = got
+				continue
+			}
+			if got != expected {
+				t.Errorf("%s/%s: the sentence handing the floor to the participant differs\n got: %q\nwant: %q",
+					condition, stage, got, expected)
+			}
+		}
+	}
+}
+
+// The host facilitates the same amount in both peer cells. She responds to a
+// peer once per stage in each, so 3-1 differs from 2-1 in who is in the room and
+// not in how attentive the host is. The baseline has no peers to respond to, so
+// it is excluded rather than padded: the host behaves identically everywhere and
+// simply has less to do.
+func TestHostFacilitatesEquallyInBothPeerConditions(t *testing.T) {
+	data := loadScripts(t)
+
+	for _, stage := range []string{"STATE_CHAT_STAGE_1", "STATE_CHAT_STAGE_2", "STATE_CHAT_STAGE_3"} {
+		one := len(turnsWithTag(data.Conditions["2-1"].Stages[stage], "facilitation"))
+		two := len(turnsWithTag(data.Conditions["3-1"].Stages[stage], "facilitation"))
+		if one != two {
+			t.Errorf("%s: host facilitation turns differ between peer cells (2-1=%d, 3-1=%d)", stage, one, two)
+		}
+		if one == 0 {
+			t.Errorf("%s: peer cells have no host facilitation turn, so the peer exchange is a round robin again", stage)
+		}
+	}
+
+	if facilitation := turnsWithTag(data.Conditions["1-1"].Stages["STATE_CHAT_STAGE_2"], "facilitation"); len(facilitation) != 0 {
+		t.Errorf("1-1: baseline has %d facilitation turns, but there is no peer to facilitate", len(facilitation))
+	}
+}
+
 // Only peers disclose. If the host ever discloses, her role stops being
 // constant across conditions and the role confound comes back.
 func TestHostNeverDiscloses(t *testing.T) {
@@ -171,7 +242,7 @@ func TestDisclosureNeverPrecedesTheQuestion(t *testing.T) {
 func TestEveryTurnCarriesAKnownTag(t *testing.T) {
 	known := map[string]bool{
 		"open": true, "peer-neutral": true, "question": true,
-		"disclosure": true, "ack": true,
+		"disclosure": true, "ack": true, "facilitation": true,
 	}
 	data := loadScripts(t)
 	for condition, config := range data.Conditions {
