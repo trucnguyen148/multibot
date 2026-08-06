@@ -615,11 +615,22 @@ export const ChatInterface = ({
                 directly on the disclosure measure. */}
             {canDecline && (
               <Button
-                variant="outlined"
-                color="inherit"
+                variant="text"
+                size="small"
                 onClick={() => void handleDecline()}
                 disabled={!awaitingUser}
-                sx={{ alignSelf: 'flex-end', whiteSpace: 'nowrap', color: 'text.secondary' }}
+                sx={{
+                  alignSelf: 'flex-end',
+                  whiteSpace: 'nowrap',
+                  // MUI shouts by default. This is a quiet way out of an
+                  // optional question sitting next to the send button, so it
+                  // should read as a link rather than compete with it.
+                  textTransform: 'none',
+                  color: 'text.secondary',
+                  fontWeight: 400,
+                  px: 1,
+                  '&:hover': { bgcolor: 'transparent', color: 'text.primary' },
+                }}
               >
                 Nothing to add
               </Button>

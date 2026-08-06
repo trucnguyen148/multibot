@@ -668,7 +668,13 @@ func (app *App) buildStageResponse(session *Session) StageConfig {
 	case StateComplete:
 		response.Type = "complete"
 		response.Title = "Session Complete"
-		response.CompletionCode = getEnvOrDefault("PROLIFIC_COMPLETION_CODE", "DEFAULT_CODE")
+		// The real code for this study, so a participant is credited even if the
+		// environment variable is missing or stale. The completion screen builds
+		// https://app.prolific.com/submissions/complete?cc=<this> from it. The
+		// previous default was the placeholder "DEFAULT_CODE", which would have
+		// failed silently at the one point in the study where failure costs a
+		// participant their payment.
+		response.CompletionCode = getEnvOrDefault("PROLIFIC_COMPLETION_CODE", "CT7D4WEX")
 	default:
 		response.Type = "unknown"
 		response.Title = "Unknown Stage"
