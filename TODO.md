@@ -198,11 +198,18 @@ and this implementation disagree, are tracked there rather than in this file. As
       rather than at the top, since asking gender immediately before items about being judged for
       needing help is a priming risk in a study that measures exactly that. Stored as `age` (integer)
       and `gender`, with `gender_self_describe` when chosen.
-- [ ] **The seriousness check is a model judgment and is wrong about one time in five.** Measured
-      over three runs of a 20-item probe set: 22/27 non-answers caught, 6/33 genuine answers wrongly
-      flagged, and not deterministic between runs. It costs a participant one hedged sentence and
-      never a turn, so it cannot affect the design, but a handful of honest participants will see it.
-      Worth a line in the paper if any transcript shows it firing on a real answer.
+- [ ] **The seriousness check is a model judgment, and its error rate on real data is unknown.**
+      Measured over three runs of a 20-item probe set that was deliberately stacked with hard cases:
+      22/27 non-answers caught, 6/33 genuine answers wrongly flagged, and not deterministic between
+      runs. Those two rates are **not** an estimate of how often real participants will see the
+      remark. Eight of the eleven genuine items were never flagged in any run, and all six false
+      positives came from three telegraphic ways of saying "nothing" (`n/a` in every run, plus
+      "cant think of anythin right now sorry" and "Nothing comes to mind honestly"). Ordinary prose
+      answers were never flagged.
+
+      It costs a participant one hedged sentence and never a turn, so it cannot affect the design.
+      **Count `not-serious` marks in the first exports** to find the real rate, and check whether any
+      landed on a genuine answer before writing anything about it in the paper.
 - [x] **Superseded: neither survey collects demographics.** Fine if the analysis joins on Prolific's own export
       by `prolific_id`, which is captured. Worth confirming before recruitment closes rather than
       after.
