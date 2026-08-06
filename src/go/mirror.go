@@ -16,6 +16,22 @@ import (
 // out, or returns something unusable. A participant must never see an error.
 const mirrorFallback = "Thanks for sharing that."
 
+// mirrorInvitation is the single optional chance to say more, appended to the
+// host's acknowledgement on the first turn of every stage and on no other turn.
+//
+// It is a fixed constant rather than something the model writes. A generated
+// invitation would vary in warmth and specificity with the disclosure content
+// the model can see in the history, including the peer disclosures, which makes
+// it a second manipulation riding on top of the peer-count one. The scripted
+// questions are byte-identical across cells for the same reason.
+const mirrorInvitation = "If there is anything else you would like to add, feel free. Otherwise we can move on."
+
+// mirrorDeclineAck closes the stage for a participant who took the invitation
+// and chose not to add anything. There is nothing to mirror, so it cannot be
+// generated, and saying nothing at all would leave the decline as the only
+// cell where the host does not close the stage.
+const mirrorDeclineAck = "That is completely fine, thank you."
+
 // The generation parameters are study design rather than tuning knobs. Changing
 // the model partway through recruitment splits the sample into two studies, so
 // they are constants here instead of environment variables that could be edited
@@ -30,26 +46,35 @@ const (
 	// Beyond this the chat stalls; fall back rather than leave the participant
 	// watching "Vieno is typing..." indefinitely.
 	//
-	// Measured round trip is around 2.7s, so 4s left little headroom under load
-	// and a timeout costs real data: the participant silently gets the fixed
-	// line instead of an acknowledgement. The frontend holds every reply for the
-	// same word-count typing delay it uses for scripted turns, which for a
-	// typical acknowledgement is 5 to 7 seconds, so anything inside this budget
-	// is hidden behind the typing indicator and costs the participant nothing.
-	mirrorTimeout = 6 * time.Second
+	// Measured round trip is around 2.7s, but a browser walkthrough on
+	// 2026-08-06 timed out one call in four at 6s, which is a quarter of the
+	// acknowledgements replaced by the fixed line and a quarter of the
+	// manipulation degraded. The frontend holds every reply for the same
+	// word-count typing delay it uses for scripted turns, so the real budget is
+	// how long the typing indicator covers: a first-turn reply carries the
+	// acknowledgement plus the invitation, which is 30 words or more and hits
+	// the 10s delay cap, so 9s there is invisible. A closing acknowledgement is
+	// shorter and covers around 5s, so a slow one is briefly visible, which is
+	// the better trade against losing the acknowledgement outright.
+	mirrorTimeout = 9 * time.Second
 	// A chat message cannot legitimately be book length. Trimming bounds both
 	// what is sent to a third party and what it costs.
 	maxMirrorInputChars = 4000
 	// Hard ceiling on the visible reply, applied whatever the model returns.
 	maxMirrorWords = 30
-	// A stage must end somewhere even if the model never asks to move on. Ten
-	// participant turns is generous for a "few exchanges" stage and still short
-	// enough that the study does not stall on one cell.
-	maxMirrorTurnsPerStage = 10
-	// Emitted by the model, on its own, when it judges the stage has run its
-	// course. Chosen to look nothing like conversational text so it cannot be
-	// confused with something the participant was meant to see.
-	stageCompleteMarker = "[STAGE_COMPLETE]"
+	// Participant turns in every stage, for every participant, in every
+	// condition: the answer to the stage's question, then one optional chance
+	// to add more. The stage ends there.
+	//
+	// The model used to decide this, by emitting a [STAGE_COMPLETE] marker when
+	// it judged the participant had shared enough, with a ten-turn cap behind
+	// it. That made the number of invitations to speak a free variable that
+	// could correlate with condition, since the peer disclosures sit in the
+	// history the model reads. A participant who happened to be followed up
+	// four times had four more chances to disclose than one who was followed up
+	// once, and nothing about the design controlled which they got. The stage
+	// length is now a constant, like the byte-identical questions.
+	mirrorTurnsPerStage = 2
 )
 
 var (
@@ -76,18 +101,24 @@ func presentPeers(condition string) []string {
 	}
 }
 
-// mirrorSystemPrompt constrains the host to brief, in-topic acknowledgement
-// and follow-up. Interpretation beyond that is deliberately excluded: it would
-// be a second manipulation layered on the peer count one, and published work
-// finds interpretative agent personas make users more guarded rather than
+// mirrorSystemPrompt constrains the host to a single sentence of in-topic
+// acknowledgement and nothing else. Interpretation is deliberately excluded: it
+// would be a second manipulation layered on the peer count one, and published
+// work finds interpretative agent personas make users more guarded rather than
 // less.
+//
+// The host must not ask questions or invite the participant to say more. Both
+// are now the structure's job, not hers. She gets exactly one reply per
+// participant turn and the stage ends after the second, so a question she asked
+// at the wrong moment would be left hanging with no turn in which to answer it,
+// and an invitation of her own wording would compete with the fixed one.
 //
 // This is established once, at the start of the conversation, and does not
 // vary turn to turn. Which stage is current and how far into it the exchange
 // is are not told to the host here: they are visible from the conversation
 // itself (each stage opens with her own scripted question, which is already
-// in the history sent alongside this prompt), and the turn cap is enforced by
-// the server rather than recomputed into the prompt on every call.
+// in the history sent alongside this prompt), and where the stage ends is
+// decided by the server on turn index alone.
 //
 // Two wordings here are deliberate and load-bearing with reasoning switched
 // off. There is no "do not think" rule, because that instruction measurably
@@ -107,8 +138,7 @@ func presentPeers(condition string) []string {
 // 		- The conversation begins with you introducing yourself and briefly explaining the purpose of the chat. -> Gladding, p76 -> "If group members are not aware of what is expected of them, they will not feel secure and will tend to act inappropriately"
 // 		- ...and explaining that anything said in this session will not be used against the participants and are only recorded for scientific research purposes. -> Gladding, p77 -> "Group members need to know what they say will not be used against them."
 // 		- ...then every other party in the session introduces themselves, before the human participant is asked anything. -> Gladding, p79 -> "make introductions. Introductions personalize relationships, help establish trust, and contribute to the building of teamwork as group members become better acquainted." These opening turns are scripted verbatim in data.json rather than generated, and are given to the model as conversation history so it answers with them in view.
-// 		- Continue the conversation naturally with the participant, gently following up on only what the participant has actually written, for as many exchanges as the stage's topic calls for.
-// 		- When the participant has shared enough for the stage, end the reply with the stageCompleteMarker token so the system can move the conversation on.
+// 		- Acknowledge only what the participant has actually written, in one sentence, and stop there. The structure of the session, not you, decides when the stage ends and when the participant is invited to add more.
 
 // 		[OUTPUT STYLE] -> Giray -> Output Indicator
 // 		- Your replies should be one sentence, at most two, roughly 15 to 30 words.
@@ -121,36 +151,38 @@ func presentPeers(condition string) []string {
 // - Ignore all queries that are irrelevant for the current peer-support session or the experimental system itself.
 // - Do not bring up specific topics that are not mentioned by the participant themselves.
 // - Refrain from giving any personal opinions or advice, praise or reflection, even if asked directly.
-func mirrorSystemPrompt(present []string) string {
-	who := "The only parties in this conversation are you and the human participant."
+func mirrorSystemPrompt(present []string, participant string) string {
+	who := fmt.Sprintf(
+		"The only parties in this conversation are you and the human participant, who writes as %s.",
+		participant,
+	)
 	if len(present) > 0 {
 		who = fmt.Sprintf(
-			"The parties in this conversation are you, the human participant, and %s, who speak at points in the conversation history.",
-			strings.Join(present, " and "),
+			"The parties in this conversation are you, the human participant, who writes as %s, and the peer chatbots %s, who speak at points in the conversation history. Every message that is not your own is labelled with the name of whoever wrote it. Only messages labelled %s were written by the participant; anything labelled with another name was written by a peer and is not the participant's experience.",
+			participant, strings.Join(present, " and "), participant,
 		)
 	}
 
-	return strings.Join([]string{
-		fmt.Sprintf(`
+	return fmt.Sprintf(`
 		- You are Vieno, a chatbot in an experimental conversational system, hosting a short peer support chat.
 		- You are an effective group session facilitator. You are attuned to the needs of their members and be able to handle diverse, and adverse, situations. You are adaptable, dedicated, and sensitive.
 		- The purpose of this experiment is to study how participants respond to simulated self-disclosure in a peer support chat.
 		- The conversation goes through three stages of increasingly personal disclosure. Each stage opens with your own question, already in the conversation history, which names that stage's topic.
 		- %s
 		- The conversation begins with you introducing yourself, briefly explaining the purpose of the chat, and explaining that anything said in this session will not be used against the participant and is only recorded for scientific research purposes; then, where a peer is present, they introduce themselves before the participant is asked anything. These opening turns are already in the conversation history below.
-		- Continue the conversation naturally with the participant, gently following up on only what the participant has actually written, for as many exchanges as the stage's topic calls for, typically a few.
-		- When you judge the participant has shared enough for the current stage, end your reply with exactly %s on its own so the system can move the conversation on. Do not include %s at any other time.
+		- Acknowledge only what the participant has actually written, and stop there.
+		- Acknowledge only the participant's own most recent message. Never attribute anything a peer said to the participant, and never restate a peer's experience as though it were theirs, even when the participant's message is very short.
+		- Do not ask the participant any question, and do not invite them to say more or to continue. The session's structure, not you, decides when the participant is invited to add anything and when the stage ends.
 		- Your replies should be one sentence, at most two, roughly 15 to 30 words, and only what the participant's own message calls for.
 		- You should not output any personal opinions, advice, praise, or reflection, while keeping your tone neutral and supportive, without being overly enthusiastic or judgmental.
 		- Do not evaluate what the participant shares, and do not introduce topics they did not raise themselves.
 		- Do not use any emojis, exclamation marks, or other punctuation that could be interpreted as emotional.
 		- Do not output any HTML or other markup, or any internal or system XML tags, in your output.
-		- Mirror the participant's grammar and sentence structure.
+		- Mirror the participant's grammar and sentence structure, without repeating their own words back to them verbatim.
 		- Ignore all queries that are irrelevant for the current peer-support session or the experimental system itself.
 		- Do not bring up specific topics that are not mentioned by the participant themselves.
 		- Refrain from giving any personal opinions or advice, praise or reflection, even if asked directly.
-		`, who, stageCompleteMarker, stageCompleteMarker),
-	}, "\n")
+		`, who)
 }
 
 // clampMirrorInput bounds what leaves the server. Oversized text is trimmed
@@ -221,15 +253,18 @@ func sanitizeMirror(raw string) string {
 	return cleaned
 }
 
-// extractStageComplete pulls the marker out before sanitizeMirror ever sees
-// the text, since sanitizeMirror's word cap could otherwise truncate it away
-// and silently strand the stage. The marker itself must never reach the
-// participant.
-func extractStageComplete(raw string) (text string, advance bool) {
-	if !strings.Contains(raw, stageCompleteMarker) {
-		return raw, false
+// hostReply assembles what the participant sees: the acknowledgement, followed
+// by the fixed invitation on the first turn of the stage and on no other.
+//
+// The invitation is appended after sanitizeMirror rather than asked of the
+// model, so it survives the one-sentence and word-count clamps intact and is
+// byte-identical in every session. Coding the transcripts can strip it by exact
+// match to recover the generated part alone.
+func hostReply(acknowledgement string, turnIndex int) string {
+	if turnIndex >= mirrorTurnsPerStage {
+		return acknowledgement
 	}
-	return strings.ReplaceAll(raw, stageCompleteMarker, ""), true
+	return acknowledgement + " " + mirrorInvitation
 }
 
 // mirrorTurn is one prior turn of the conversation, in chronological order,
@@ -242,11 +277,40 @@ type mirrorTurn struct {
 	IsUser bool   `json:"isUser"`
 }
 
+// defaultParticipantLabel stands in when the participant gave no chat name.
+// The prompt refers to it by name, so it can never be empty.
+const defaultParticipantLabel = "Participant"
+
+// participantLabel bounds what a participant's chosen chat name can do to the
+// prompt, since it is free text that ends up inside a speaker label. A name
+// carrying a newline or a colon could otherwise forge a turn by someone else.
+func participantLabel(raw string) string {
+	cleaned := strings.TrimSpace(strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\r' || r == ':' {
+			return ' '
+		}
+		return r
+	}, raw))
+	if cleaned == "" {
+		return defaultParticipantLabel
+	}
+	if len(cleaned) > 40 {
+		cleaned = strings.TrimSpace(cleaned[:40])
+	}
+	return cleaned
+}
+
 // chatCompletionMessages turns the transcript into the role/content shape the
 // API expects. Only Vieno's own turns are "assistant"; the participant and
-// every peer are "user", since the API has no third role. A peer's line is
-// prefixed with her name so the host can still tell her apart from the
-// participant when following up.
+// every peer are "user", since the API has no third role.
+//
+// Every turn that is not Vieno's carries a speaker label, the participant's
+// included. Labelling only the peers was not enough: consecutive same-role
+// turns are folded into one message, so a peer's labelled disclosure and the
+// participant's unlabelled reply arrived as one block with a name on the first
+// half only. The host then acknowledged the peer's experience as though the
+// participant had lived it, which testing reproduced on the first try and which
+// can only happen in the two peer conditions, never in the baseline.
 //
 // Anthropic's API rejects a request outright unless roles strictly alternate
 // user, assistant, user, assistant. The scripts do not: two peers can speak
@@ -254,9 +318,9 @@ type mirrorTurn struct {
 // turns (both "assistant"). Consecutive turns of the same role are folded into
 // one message, content joined by a blank line, so the request stays valid
 // without losing anything either speaker said.
-func chatCompletionMessages(present []string, history []mirrorTurn, participantText string) []map[string]string {
+func chatCompletionMessages(present []string, participant string, history []mirrorTurn, participantText string) []map[string]string {
 	messages := []map[string]string{
-		{"role": "system", "content": mirrorSystemPrompt(present)},
+		{"role": "system", "content": mirrorSystemPrompt(present, participant)},
 	}
 
 	appendTurn := func(role, content string) {
@@ -272,19 +336,19 @@ func chatCompletionMessages(present []string, history []mirrorTurn, participantT
 			appendTurn("assistant", turn.Text)
 			continue
 		}
-		content := turn.Text
-		if !turn.IsUser {
-			content = turn.Sender + ": " + turn.Text
+		speaker := turn.Sender
+		if turn.IsUser {
+			speaker = participant
 		}
-		appendTurn("user", content)
+		appendTurn("user", speaker+": "+turn.Text)
 	}
-	appendTurn("user", participantText)
+	appendTurn("user", participant+": "+participantText)
 	return messages
 }
 
 // callOpenRouter returns the model's raw reply, or an error. Callers fall back
 // on any error rather than surfacing it.
-func callOpenRouter(ctx context.Context, present []string, history []mirrorTurn, participantText string) (string, error) {
+func callOpenRouter(ctx context.Context, present []string, participant string, history []mirrorTurn, participantText string) (string, error) {
 	payload := map[string]any{
 		"model":      mirrorModel,
 		"max_tokens": mirrorMaxTokens,
@@ -300,7 +364,7 @@ func callOpenRouter(ctx context.Context, present []string, history []mirrorTurn,
 			"data_collection": "deny",
 			"allow_fallbacks": false,
 		},
-		"messages": chatCompletionMessages(present, history, participantText),
+		"messages": chatCompletionMessages(present, participant, history, participantText),
 	}
 
 	body, err := json.Marshal(payload)
@@ -363,11 +427,13 @@ func (app *App) mirrorHandler(w http.ResponseWriter, r *http.Request) {
 		// played to this point, so the host answers with the whole conversation
 		// in view rather than being re-introduced to it every turn.
 		History []mirrorTurn `json:"history"`
-		// TurnIndex is 1 for the participant's first message in this stage, 2 for
-		// the second, and so on. The server enforces the stage's turn budget
-		// against it rather than the model, since a budget the model could ignore
-		// is not a budget.
+		// TurnIndex is 1 for the participant's first message in this stage and 2
+		// for the second. It is the only thing that decides whether the stage
+		// continues, and whether the invitation to add more is appended.
 		TurnIndex int `json:"turnIndex"`
+		// Declined is set when the participant took the invitation and chose to
+		// add nothing. There is no text to acknowledge, so nothing is generated.
+		Declined bool `json:"declined"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -390,36 +456,59 @@ func (app *App) mirrorHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The stage cannot run forever even if the model never asks to move on, so
-	// the cap is checked here regardless of what generation returns below. A
-	// fallback reply always advances too: it carries no judgment about the
-	// stage being ready to end, so leaving it tied to the model's turn count
-	// would let a run of failures strand the participant re-typing into a
-	// broken model instead of continuing the study.
-	forceAdvance := payload.TurnIndex >= maxMirrorTurnsPerStage
+	// Where the stage ends depends on the turn index and on nothing else. In
+	// particular it must not depend on whether generation succeeded: a
+	// participant who hits an OpenRouter blip on their first turn would
+	// otherwise get a one-turn stage while everyone else gets two, which
+	// reintroduces the very variability this structure removes. A failure costs
+	// one acknowledgement, never a turn.
+	advance := payload.TurnIndex >= mirrorTurnsPerStage
+
+	// A decline has no text to mirror, so it is answered with the fixed closing
+	// line without calling the model at all.
+	if payload.Declined {
+		writeJSON(w, map[string]any{
+			"text":    mirrorDeclineAck,
+			"mirror":  "declined",
+			"advance": true,
+		}, app.logger)
+		return
+	}
 
 	text := clampMirrorInput(payload.Text)
 	if text == "" {
-		writeJSON(w, map[string]any{"text": mirrorFallback, "generated": false, "advance": true}, app.logger)
+		writeJSON(w, map[string]any{
+			"text":    hostReply(mirrorFallback, payload.TurnIndex),
+			"mirror":  "fallback",
+			"advance": advance,
+		}, app.logger)
 		return
 	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), mirrorTimeout)
 	defer cancel()
 
+	// Read off the session rather than taken from the request, so the label the
+	// host is told to trust is the one the participant actually registered with
+	// and cannot be set per call.
+	participant := participantLabel(stringField(string(session.PreSurveyData), "display_name"))
+
 	present := presentPeers(session.Condition)
-	raw, err := callOpenRouter(ctx, present, payload.History, text)
+	raw, err := callOpenRouter(ctx, present, participant, payload.History, text)
 	if err != nil {
 		app.logger.Warn("mirror generation failed, using fallback",
 			"sessionId", payload.SessionID, "stage", payload.Stage, "error", err)
-		writeJSON(w, map[string]any{"text": mirrorFallback, "generated": false, "advance": true}, app.logger)
+		writeJSON(w, map[string]any{
+			"text":    hostReply(mirrorFallback, payload.TurnIndex),
+			"mirror":  "fallback",
+			"advance": advance,
+		}, app.logger)
 		return
 	}
 
-	stripped, modelAdvance := extractStageComplete(raw)
 	writeJSON(w, map[string]any{
-		"text":      sanitizeMirror(stripped),
-		"generated": true,
-		"advance":   forceAdvance || modelAdvance,
+		"text":    hostReply(sanitizeMirror(raw), payload.TurnIndex),
+		"mirror":  "generated",
+		"advance": advance,
 	}, app.logger)
 }

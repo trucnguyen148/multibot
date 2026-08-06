@@ -26,11 +26,12 @@ const BOT_AVATAR_COLORS: Record<string, string> = {
 };
 const DEFAULT_BOT_AVATAR_COLOR = 'grey.500';
 
-// A stage must end somewhere even if the host never asks to move on and the
-// network never reaches the server. Mirrors maxMirrorTurnsPerStage in
-// mirror.go, which is the cap actually enforced; this one is the client-side
-// fallback for when that call never completes at all.
-const MAX_MIRROR_TURNS_PER_STAGE = 10;
+// Participant turns in every stage, for every participant, in every condition:
+// the answer to the stage's question, then one optional chance to add more.
+// Mirrors mirrorTurnsPerStage in mirror.go. Both sides compute the same thing
+// from the same turn index, so the structure holds even when the server is
+// unreachable and no reply comes back at all.
+const MIRROR_TURNS_PER_STAGE = 2;
 
 const typingDelayFor = (text: string): number => {
   const wordCount = text.split(/\s+/).filter((word) => word.length > 0).length;
@@ -55,22 +56,24 @@ interface ChatMessage {
   isAssessment?: boolean;
   assessmentScore?: number;
   // Present only on a host turn produced at runtime. Lets the export tell
-  // generated text from script, and a real acknowledgement from a timed-out
-  // one, when the transcripts are coded.
-  mirror?: 'generated' | 'fallback';
+  // generated text from script, a real acknowledgement from a timed-out one,
+  // and a stage the participant closed by declining the invitation, when the
+  // transcripts are coded.
+  mirror?: 'generated' | 'fallback' | 'declined';
 }
 
 // What the host says when the backend cannot be reached at all. The backend has
-// its own copy of this line for when generation fails on its side; this one only
-// covers the network never getting there.
+// its own copy of these lines for when generation fails on its side; these only
+// cover the network never getting there, and must stay identical to the
+// constants in mirror.go or the two paths read differently in one transcript.
 const MIRROR_FALLBACK = 'Thanks for sharing that.';
+const MIRROR_INVITATION =
+  'If there is anything else you would like to add, feel free. Otherwise we can move on.';
+const MIRROR_DECLINE_ACK = 'That is completely fine, thank you.';
 
 interface MirrorReply {
   text: string;
-  generated: boolean;
-  // True when the host judged the stage's exchange complete, or the server's
-  // turn cap was reached, and the comfort check-in should follow this reply.
-  advance: boolean;
+  mirror: 'generated' | 'fallback' | 'declined';
 }
 
 // What playMirror sends as `history`: the conversation so far, oldest first,
@@ -88,14 +91,16 @@ interface ChatInterfaceProps {
   userName: string;
   conditionScripts: Record<string, BotScript[]>;
   testMode?: boolean;
-  // Supplied only when the server reports mirroring is on. When absent, the
-  // host says nothing between the participant's message and the next stage,
-  // and a stage advances only once the turn cap is reached.
+  // Absent only when there is no server session at all, which is the offline
+  // fallback path where nothing is being saved anyway. The stage structure is
+  // the same either way, since it depends on the turn index rather than on
+  // anything the server returns.
   requestMirror?: (
     userText: string,
     stage: string,
     history: MirrorHistoryTurn[],
-    turnIndex: number
+    turnIndex: number,
+    declined: boolean
   ) => Promise<MirrorReply>;
   onChatComplete: (
     transcript: ChatMessage[],
@@ -126,6 +131,11 @@ export const ChatInterface = ({
   const [stage3Score, setStage3Score] = useState<number | null>(null);
 
   const [awaitingUser, setAwaitingUser] = useState<boolean>(false);
+  // True only while the participant is sitting on the optional second turn, so
+  // the decline button exists exactly where the invitation applies and nowhere
+  // else. Held in state rather than read off turnsThisStageRef because a ref
+  // does not re-render.
+  const [canDecline, setCanDecline] = useState<boolean>(false);
   const [inputValue, setInputValue] = useState<string>('');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -138,10 +148,11 @@ export const ChatInterface = ({
   // Same reason as messagesRef. The stage 3 rating is set and used within one
   // event, so state has not committed by the time the closing timeout reads it.
   const latestStage3Ref = useRef<number>(0);
-  // The participant's turn number within the current stage, reset when the
-  // stage changes. Sent to the server so it can enforce the stage's turn cap,
-  // and checked client-side as the fallback for when that call never
-  // completes at all.
+  // The participant's turn number within the current stage, 1 or 2, reset when
+  // the stage changes. This is the only thing that decides where a stage ends,
+  // on both sides: the server reads it to decide whether to append the
+  // invitation, and this component reads it to decide whether the comfort
+  // check-in follows.
   const turnsThisStageRef = useRef<number>(0);
 
   const scrollToBottom = () => {
@@ -164,6 +175,7 @@ export const ChatInterface = ({
     let isCancelled = false;
     startedStages[stageKey] = true;
     turnsThisStageRef.current = 0;
+    setCanDecline(false);
 
     const playBotScripts = async () => {
       for (const script of scriptsToPlay) {
@@ -202,11 +214,27 @@ export const ChatInterface = ({
     };
   }, [conditionScripts, internalStage]);
 
-  // Plays the host's reply to what the participant just wrote, then resolves
-  // with whether the host judged the stage complete. Never throws: a failure
-  // here must not strand a participant mid-study.
-  const playMirror = async (userText: string, stage: string, turnIndex: number): Promise<boolean> => {
-    if (!requestMirror) return true;
+  // Plays the host's reply to what the participant just wrote, or to their
+  // decline. Never throws: a failure here must not strand a participant
+  // mid-study, and it must not change where the stage ends either.
+  const playMirror = async (
+    userText: string,
+    stage: string,
+    turnIndex: number,
+    declined = false
+  ): Promise<void> => {
+    // What the host says when the request never reaches the server. A decline
+    // needs nothing generated, so offline it is not a degraded reply at all and
+    // is marked as the decline it is rather than as a fallback.
+    const offline: MirrorReply = declined
+      ? { text: MIRROR_DECLINE_ACK, mirror: 'declined' }
+      : {
+          text:
+            turnIndex < MIRROR_TURNS_PER_STAGE
+              ? `${MIRROR_FALLBACK} ${MIRROR_INVITATION}`
+              : MIRROR_FALLBACK,
+          mirror: 'fallback',
+        };
 
     const startedAt = Date.now();
     setIsTyping(true);
@@ -219,16 +247,17 @@ export const ChatInterface = ({
       .filter((msg) => !msg.isAssessment)
       .map((msg) => ({ sender: msg.sender, text: msg.text, isUser: msg.isUser === true }));
 
-    // A fallback reply always advances: it carries no judgment about whether
-    // the stage is ready to end, so tying it to the turn cap instead would let
-    // a run of failures strand the participant re-typing into a broken model
-    // rather than continuing the study.
-    let reply: MirrorReply = { text: MIRROR_FALLBACK, generated: false, advance: true };
-    try {
-      reply = await requestMirror(userText, stage, history, turnIndex);
-    } catch {
-      // Keep the fallback: the network never reached the server at all.
-      reply = { text: MIRROR_FALLBACK, generated: false, advance: true };
+    // A failure costs one acknowledgement and never a turn. Where the stage
+    // ends is decided by the caller from the turn index alone, so a participant
+    // who hits a network blip still gets the same structure as everyone else.
+    let reply: MirrorReply = offline;
+    if (requestMirror) {
+      try {
+        reply = await requestMirror(userText, stage, history, turnIndex, declined);
+      } catch {
+        // Keep the offline line: the network never reached the server at all.
+        reply = offline;
+      }
     }
 
     // Hold the reply until it has been "typed" at the same rate as every
@@ -249,11 +278,9 @@ export const ChatInterface = ({
         text: reply.text,
         timestamp: new Date().toISOString(),
         stage,
-        mirror: reply.generated ? 'generated' : 'fallback',
+        mirror: reply.mirror,
       },
     ]);
-
-    return reply.advance;
   };
 
   const handleUserSubmit = async () => {
@@ -271,18 +298,34 @@ export const ChatInterface = ({
     setMessages((prev) => [...prev, userMsg]);
     setInputValue('');
     setAwaitingUser(false);
+    setCanDecline(false);
 
-    // Every stage runs the same loop: the host replies, and either she or the
-    // server's turn cap decides the stage is done, in which case the check-in
-    // follows; otherwise the participant is free to keep going, up to
-    // MAX_MIRROR_TURNS_PER_STAGE exchanges.
-    turnsThisStageRef.current += 1;
-    const advance = await playMirror(userMsg.text, internalStage, turnsThisStageRef.current);
-    if (advance) {
+    // Every stage runs the same two turns for every participant: their answer,
+    // the host's acknowledgement carrying one invitation to add more, their
+    // optional second turn, the host's closing acknowledgement. Nothing about
+    // what was written, or about whether generation succeeded, changes that.
+    const turnIndex = turnsThisStageRef.current + 1;
+    turnsThisStageRef.current = turnIndex;
+    await playMirror(userMsg.text, internalStage, turnIndex);
+    if (turnIndex >= MIRROR_TURNS_PER_STAGE) {
       askForComfort(internalStage);
     } else {
       setAwaitingUser(true);
+      setCanDecline(true);
     }
+  };
+
+  // The other half of the invitation. Declining is a real answer, so it ends
+  // the stage exactly where a typed second turn would, and is recorded as a
+  // host turn marked "declined" with no participant message. That keeps a
+  // decline a genuine zero in the word counts instead of the word "no".
+  const handleDecline = async () => {
+    setInputValue('');
+    setAwaitingUser(false);
+    setCanDecline(false);
+    turnsThisStageRef.current = MIRROR_TURNS_PER_STAGE;
+    await playMirror('', internalStage, MIRROR_TURNS_PER_STAGE, true);
+    askForComfort(internalStage);
   };
 
   // The check-in is a normal transcript entry, so the rating and its position in
@@ -529,7 +572,8 @@ export const ChatInterface = ({
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2 }}>
                 <Avatar
                   sx={{
-                    bgcolor: (typingBot && BOT_AVATAR_COLORS[typingBot]) || DEFAULT_BOT_AVATAR_COLOR,
+                    bgcolor:
+                      (typingBot && BOT_AVATAR_COLORS[typingBot]) || DEFAULT_BOT_AVATAR_COLOR,
                     width: 32,
                     height: 32,
                   }}
@@ -564,6 +608,22 @@ export const ChatInterface = ({
               multiline
               maxRows={3}
             />
+            {/* The invitation to add more is optional, so there has to be a way
+                to take it and add nothing. Without this the input box is the
+                only way forward and a participant with nothing left to say has
+                to invent something, which is a demand characteristic sitting
+                directly on the disclosure measure. */}
+            {canDecline && (
+              <Button
+                variant="outlined"
+                color="inherit"
+                onClick={() => void handleDecline()}
+                disabled={!awaitingUser}
+                sx={{ alignSelf: 'flex-end', whiteSpace: 'nowrap', color: 'text.secondary' }}
+              >
+                Nothing to add
+              </Button>
+            )}
             <IconButton
               color="primary"
               onClick={() => void handleUserSubmit()}

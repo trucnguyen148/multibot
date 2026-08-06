@@ -161,6 +161,30 @@ and this implementation disagree, are tracked there rather than in this file. As
 
 ## Methodology
 
+- [x] **Fixed: the host decided how long each stage ran, which is a confound.** It emitted a
+      `[STAGE_COMPLETE]` marker whenever it judged the participant had shared enough, capped at ten
+      turns. The number of invitations to disclose was therefore a free variable, and one free to
+      correlate with condition, since the peer disclosures sit in the history the host reads. Every
+      stage now runs exactly two participant turns for everyone: the answer, then one optional chance
+      to add more, invited by a fixed constant the model does not write and declinable with a
+      "Nothing to add" button. Turn count is no longer a measure, and word count is comparable across
+      participants for the first time. Pinned by `src/go/mirror_test.go`.
+- [x] **Fixed: the host attributed peer disclosures to the participant.** Peers and the participant
+      share the API's `user` role and consecutive same-role turns are folded into one message, but
+      only the peers carried a speaker label, so the participant's words arrived as an unlabelled
+      tail on a block headed by a peer's name. Given a short participant turn the host reliably
+      acknowledged the peer's experience as though the participant had lived it. Reproduced on the
+      first try in testing and fixed by labelling every speaker. It could only ever happen in `2-1`
+      and `3-1`, so it did not cancel out across the design. **Any transcript collected before
+      2026-08-06 may contain it**, though only test rows exist so far.
+- [ ] **There is no manipulation check.** Nothing asks what the participant made of the other chat
+      members: whether they noticed the peers disclosed, whether they took them for people or for
+      software, or how many others they recall. A reviewer of a paper about multi-agent personas will
+      ask, and the data cannot currently answer. Raised and deliberately deferred on 2026-08-06; one
+      required open-ended item in the post-survey would close it.
+- [ ] **Neither survey collects demographics.** Fine if the analysis joins on Prolific's own export
+      by `prolific_id`, which is captured. Worth confirming before recruitment closes rather than
+      after.
 - [ ] **Condition assignment is unbalanced.** Each session draws a condition uniformly at random and
       independently, with nothing rebalancing afterwards. Across a target of 180 the cells will drift
       away from 60 each, and abandoned sessions make it worse because they still consume an assignment.

@@ -79,6 +79,10 @@ type transcriptMetrics struct {
 	ParticipantWords int
 	MirrorGenerated  int
 	MirrorFallback   int
+	// Declines is how many of the three stages the participant ended by taking
+	// the optional invitation and adding nothing. Zero to three, and a measure
+	// in its own right rather than only a health signal.
+	Declines int
 	// StageWords is participant words keyed by the chat sub-state
 	// (STATE_CHAT_STAGE_1/2/3, STATE_CLOSING).
 	StageWords map[string]int
@@ -115,6 +119,8 @@ func metricsFor(raw string) transcriptMetrics {
 			metrics.MirrorGenerated++
 		case "fallback":
 			metrics.MirrorFallback++
+		case "declined":
+			metrics.Declines++
 		}
 	}
 	return metrics
@@ -137,6 +143,7 @@ type adminSessionSummary struct {
 	ParticipantWords int       `json:"participant_words"`
 	MirrorGenerated  int       `json:"mirror_generated"`
 	MirrorFallback   int       `json:"mirror_fallback"`
+	Declines         int       `json:"declines"`
 	HasPostSurvey    bool      `json:"has_post_survey"`
 }
 
@@ -215,6 +222,7 @@ func summarize(row adminRow) adminSessionSummary {
 		ParticipantWords: metrics.ParticipantWords,
 		MirrorGenerated:  metrics.MirrorGenerated,
 		MirrorFallback:   metrics.MirrorFallback,
+		Declines:         metrics.Declines,
 		HasPostSurvey:    strings.TrimSpace(row.postSurvey) != "",
 	}
 	if !row.updatedAt.IsZero() && !row.createdAt.IsZero() {

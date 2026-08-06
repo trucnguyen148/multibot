@@ -9,6 +9,11 @@ interface PreSurveyProps {
   handlePreSurveySubmit: (event: React.FormEvent<HTMLFormElement>) => void;
 }
 
+// Section headings are written for the participant, not for the codebook. The
+// instruments are still DDI, SSRPH and AIAS and the response keys are unchanged,
+// but printing an instrument's name at a participant is at best unfriendly and
+// at worst priming: "Stigma Scale for Receiving Psychological Help" sat directly
+// above five items about being judged for needing help.
 const ddiItems = [
   'When I feel upset, I usually confide in my friends.',
   'I prefer not to talk about my problems.',
@@ -39,12 +44,27 @@ const aiasItems = [
   'I believe artificial intelligence destroys creativity.',
 ];
 
+// Checked by name rather than by counting filled keys, the same way the
+// post-survey does it. A raw key count lets any stray key that lands in
+// preSurvey stand in for a genuinely unanswered item.
+const requiredPreKeys = [
+  ...ddiItems.map((_, i) => `DDI_${i + 1}`),
+  ...ssrphItems.map((_, i) => `SSRPH_${i + 1}`),
+  ...aiasItems.map((_, i) => `AIAS_${i + 1}`),
+  'Self_Comfort_Pre',
+];
+
 export const PreSurvey: React.FC<PreSurveyProps> = ({
   stage,
   preSurvey,
   handleSliderChange,
   handlePreSurveySubmit,
 }) => {
+  const isComplete = requiredPreKeys.every((key) => {
+    const value = preSurvey[key];
+    return value !== undefined && String(value).trim() !== '';
+  });
+
   return (
     <Paper elevation={2} sx={{ p: 4, borderRadius: 2 }}>
       <Typography variant="h4" gutterBottom>
@@ -61,7 +81,7 @@ export const PreSurvey: React.FC<PreSurveyProps> = ({
           {/* DDI Section */}
           <Box>
             <Typography variant="h6" sx={{ color: 'primary.main', mb: 1 }}>
-              Distress Disclosure Index (DDI)
+              Talking about difficulties
             </Typography>
             <Typography variant="body2" sx={{ color: 'text.secondary', mb: 3 }}>
               1 = Strongly Disagree, 2 = Disagree, 3 = Neutral, 4 = Agree, 5 = Strongly Agree
@@ -112,7 +132,7 @@ export const PreSurvey: React.FC<PreSurveyProps> = ({
           {/* SSRPH Section */}
           <Box>
             <Typography variant="h6" sx={{ color: 'primary.main', mb: 1 }}>
-              Adapted Stigma Scale for Receiving Psychological Help (SSRPH)
+              Seeking support at work
             </Typography>
             <Typography variant="body2" sx={{ color: 'text.secondary', mb: 3 }}>
               0 = Strongly Disagree, 3 = Strongly Agree
@@ -163,7 +183,7 @@ export const PreSurvey: React.FC<PreSurveyProps> = ({
           {/* AIAS Section */}
           <Box>
             <Typography variant="h6" sx={{ color: 'primary.main', mb: 1 }}>
-              Artificial Intelligence Attitude Scale (AIAS)
+              Your views on artificial intelligence
             </Typography>
             <Typography variant="body2" sx={{ color: 'text.secondary', mb: 3 }}>
               1 = Strongly Disagree, 2 = Disagree, 3 = Neutral, 4 = Agree, 5 = Strongly Agree
@@ -261,15 +281,8 @@ export const PreSurvey: React.FC<PreSurveyProps> = ({
           </Box>
           <Divider />
 
-          <Button
-            type="submit"
-            variant="contained"
-            size="large"
-            disabled={Object.keys(preSurvey).length < 22}
-          >
-            {Object.keys(preSurvey).length < 22
-              ? 'Please answer all questions'
-              : 'Submit Pre-Survey'}
+          <Button type="submit" variant="contained" size="large" disabled={!isComplete}>
+            {isComplete ? 'Continue' : 'Please answer all questions'}
           </Button>
         </Stack>
       </form>

@@ -85,8 +85,9 @@ const buildScaleDefaults = (prefix: string, count: number, value: number): Surve
   return filled;
 };
 
-// Must cover every key the surveys count, or their submit buttons stay disabled.
-// Pre-survey needs 22 keys, post-survey needs 15.
+// Must cover every key the surveys require, or their submit buttons stay
+// disabled. Both surveys now check their required keys by name, so a missing
+// one here shows up as a stuck button in test mode rather than silently.
 const TEST_PRE_SURVEY: SurveyResponse = {
   ...buildScaleDefaults('DDI', 12, 1),
   ...buildScaleDefaults('SSRPH', 5, 0),
@@ -97,8 +98,10 @@ const TEST_PRE_SURVEY: SurveyResponse = {
 const TEST_POST_SURVEY: SurveyResponse = {
   ...buildScaleDefaults('BFNE', 12, 1),
   Self_Comfort: 1,
+  Self_Depth: 1,
   offline_support: 'No',
   reflection: 'TEST MODE — placeholder, not a real response.',
+  held_back: 'TEST MODE — placeholder, not a real response.',
   reflection_influence: 'TEST MODE — placeholder, not a real response.',
 };
 
@@ -123,33 +126,36 @@ if (!isLocal && !API_BASE_URL) {
 
 // Asks the host for an acknowledgement of what the participant just wrote. The
 // backend already falls back to a fixed line on any generation failure, so this
-// only has to survive the network layer. `generated` is carried through to the
-// transcript so the export can tell a real acknowledgement from a fallback.
+// only has to survive the network layer. `mirror` is carried through to the
+// transcript so the export can tell a real acknowledgement from a fallback, and
+// either from a stage the participant closed by declining the invitation.
 // `history` is the conversation so far, oldest first, across every stage
 // played to this point, so the host answers with the whole conversation in
 // view instead of being re-introduced to it every turn. `turnIndex` is the
-// participant's turn number within the current stage (1 for their first
-// message in it), which the backend uses to enforce the stage's turn cap.
-// `advance` comes back true when the host judged the stage complete, or the
-// cap was reached, and the conversation should move on.
+// participant's turn number within the current stage, 1 or 2, which the backend
+// uses to decide whether the fixed invitation to add more is appended.
+//
+// Where the stage ends is not read off this reply. Both sides derive it from
+// the turn index, so a request that never completes cannot shorten a stage.
 const requestMirror = async (
   sessionId: string,
   userText: string,
   stage: string,
   history: { sender: string; text: string; isUser: boolean }[],
-  turnIndex: number
-): Promise<{ text: string; generated: boolean; advance: boolean }> => {
+  turnIndex: number,
+  declined: boolean
+): Promise<{ text: string; mirror: 'generated' | 'fallback' | 'declined' }> => {
   const response = await fetch(`${API_BASE_URL}/api/mirror`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sessionId, stage, text: userText, history, turnIndex }),
+    body: JSON.stringify({ sessionId, stage, text: userText, history, turnIndex, declined }),
   });
   if (!response.ok) throw new Error('mirror unavailable');
   const payload = await response.json();
   return {
     text: typeof payload.text === 'string' ? payload.text : 'Thanks for sharing that.',
-    generated: payload.generated === true,
-    advance: payload.advance === true,
+    mirror:
+      payload.mirror === 'generated' || payload.mirror === 'declined' ? payload.mirror : 'fallback',
   };
 };
 
@@ -477,8 +483,8 @@ function App() {
                 // the offline fallback path where nothing is being saved anyway.
                 requestMirror={
                   sessionId
-                    ? (userText, chatStage, history, turnIndex) =>
-                        requestMirror(sessionId, userText, chatStage, history, turnIndex)
+                    ? (userText, chatStage, history, turnIndex, declined) =>
+                        requestMirror(sessionId, userText, chatStage, history, turnIndex, declined)
                     : undefined
                 }
                 onChatComplete={async (transcript, stage1Score, stage2Score, stage3Score) => {

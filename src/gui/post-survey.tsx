@@ -26,6 +26,10 @@ interface PostSurveyProps {
   handlePostSurveySubmit: (event: React.FormEvent<HTMLFormElement>) => void;
 }
 
+// Section headings are written for the participant, not for the codebook. The
+// instrument is still the state-adapted BFNE and the response keys are
+// unchanged; naming it, and calling it a "(State)" measure, only tells the
+// participant what is being measured in them.
 const bfneItems = [
   'I worried about what the other chat members would think of me.',
   'I was unconcerned even if I thought the other members were forming an unfavorable impression of me. ',
@@ -59,8 +63,10 @@ export const PostSurvey: React.FC<PostSurveyProps> = ({
   const requiredKeys = [
     ...bfneItems.map((_, i) => `BFNE_${i + 1}`),
     'Self_Comfort',
+    'Self_Depth',
     'offline_support',
     'reflection',
+    'held_back',
   ];
 
   const isComplete =
@@ -83,7 +89,7 @@ export const PostSurvey: React.FC<PostSurveyProps> = ({
           {/* BFNE Section */}
           <Box>
             <Typography variant="h6" gutterBottom color="primary">
-              Brief Fear of Negative Evaluation (State)
+              How you felt during the chat
             </Typography>
             <Typography variant="body2" sx={{ color: 'text.secondary', mb: 3 }}>
               1 = Not at all characteristic of me, 5 = Extremely characteristic of me
@@ -131,51 +137,62 @@ export const PostSurvey: React.FC<PostSurveyProps> = ({
           </Box>
           <Divider />
 
-          {/* Depth and Comfort Section */}
+          {/* Comfort and depth. Self_Depth was specified in study-design.md and
+              never built, so until now the section heading promised a depth
+              measure the survey did not contain. It carries more weight than it
+              did: with the stage length fixed at two turns, neither turn count
+              nor word count says much about how far anyone actually went. */}
           <Box>
             <Typography variant="h6" gutterBottom color="primary">
-              Self-Assessed Depth & Comfort
+              About the chat
             </Typography>
             <Typography variant="body2" sx={{ color: 'text.secondary', mb: 3 }}>
               1 = Strongly Disagree, 7 = Strongly Agree
             </Typography>
             <Stack spacing={4}>
-              <Box>
-                <Typography variant="body1" gutterBottom>
-                  I felt comfortable disclosing my true professional or academic challenges in this
-                  chat.
-                </Typography>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 3, mt: 1 }}>
-                  <Slider
-                    value={(postSurvey[`Self_Comfort`] as number) || 4}
-                    min={1}
-                    max={7}
-                    step={1}
-                    marks
-                    onChange={(_, val) => handleSliderChange('post', `Self_Comfort`, val)}
-                    onChangeCommitted={(_, val) => handleSliderChange('post', `Self_Comfort`, val)}
-                    sx={{
-                      color: postSurvey[`Self_Comfort`] !== undefined ? 'primary.main' : 'grey.400',
-                      '& .MuiSlider-thumb': {
-                        display: postSurvey[`Self_Comfort`] !== undefined ? 'flex' : 'none',
-                      },
-                    }}
-                  />
-                  <Typography
-                    variant="body2"
-                    sx={{
-                      color:
-                        postSurvey[`Self_Comfort`] !== undefined ? 'success.main' : 'error.main',
-                      minWidth: '95px',
-                      fontWeight: 'bold',
-                    }}
-                  >
-                    {postSurvey[`Self_Comfort`] !== undefined
-                      ? `Score: ${postSurvey['Self_Comfort']}`
-                      : 'Unanswered'}
+              {[
+                {
+                  key: 'Self_Comfort',
+                  text: 'I felt comfortable disclosing my true professional or academic challenges in this chat.',
+                },
+                {
+                  key: 'Self_Depth',
+                  text: 'I shared things about myself that I would normally keep private.',
+                },
+              ].map(({ key, text }) => (
+                <Box key={key}>
+                  <Typography variant="body1" gutterBottom>
+                    {text}
                   </Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 3, mt: 1 }}>
+                    <Slider
+                      value={(postSurvey[key] as number) || 4}
+                      min={1}
+                      max={7}
+                      step={1}
+                      marks
+                      onChange={(_, val) => handleSliderChange('post', key, val)}
+                      onChangeCommitted={(_, val) => handleSliderChange('post', key, val)}
+                      sx={{
+                        color: postSurvey[key] !== undefined ? 'primary.main' : 'grey.400',
+                        '& .MuiSlider-thumb': {
+                          display: postSurvey[key] !== undefined ? 'flex' : 'none',
+                        },
+                      }}
+                    />
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        color: postSurvey[key] !== undefined ? 'success.main' : 'error.main',
+                        minWidth: '95px',
+                        fontWeight: 'bold',
+                      }}
+                    >
+                      {postSurvey[key] !== undefined ? `Score: ${postSurvey[key]}` : 'Unanswered'}
+                    </Typography>
+                  </Box>
                 </Box>
-              </Box>
+              ))}
 
               {/* Offline Support Section */}
               <Box>
@@ -237,16 +254,36 @@ export const PostSurvey: React.FC<PostSurveyProps> = ({
                   required
                 />
 
+                {/* Restraint rather than disclosure. What someone withheld, and
+                    why, is the other half of the story the transcripts tell, and
+                    it is the item that still has something to say if the comfort
+                    scores come back flat. Deliberately does not ask what the
+                    thing was, only what made them hold back. */}
                 <Typography variant="body1" sx={{ mt: 3, mb: 2 }}>
-                  Did the responses from the other chat members influence what you chose to share?
-                  If so, how? (Optional)
+                  Was there anything you chose not to share in the chat? You do not need to say what
+                  it was, only what made you hold back.
                 </Typography>
                 <TextField
                   fullWidth
                   multiline
                   rows={4}
                   variant="outlined"
-                  placeholder="Optional"
+                  placeholder="Type your answer here..."
+                  value={(postSurvey['held_back'] as string) || ''}
+                  onChange={(e) => handleSliderChange('post', 'held_back', e.target.value)}
+                  required
+                />
+
+                <Typography variant="body1" sx={{ mt: 3, mb: 2 }}>
+                  Did the responses from the other chat members influence what you chose to share?
+                  If so, how?
+                </Typography>
+                <TextField
+                  fullWidth
+                  multiline
+                  rows={4}
+                  variant="outlined"
+                  placeholder="Type your answer here..."
                   value={(postSurvey['reflection_influence'] as string) || ''}
                   onChange={(e) =>
                     handleSliderChange('post', 'reflection_influence', e.target.value)
@@ -263,7 +300,7 @@ export const PostSurvey: React.FC<PostSurveyProps> = ({
             color="success"
             disabled={!isComplete}
           >
-            {isComplete ? 'Submit Session Data' : 'Please complete all fields'}
+            {isComplete ? 'Submit answers' : 'Please complete all fields'}
           </Button>
         </Stack>
       </form>
