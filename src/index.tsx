@@ -101,6 +101,7 @@ const TEST_POST_SURVEY: SurveyResponse = {
   ...buildScaleDefaults('BFNE', 12, 1),
   Self_Comfort: 1,
   Self_Depth: 1,
+  Perceived_Humanness: 1,
   offline_support: 'No',
   reflection: 'TEST MODE — placeholder, not a real response.',
   held_back: 'TEST MODE — placeholder, not a real response.',
@@ -200,7 +201,7 @@ function App() {
     const stageConfigMap: Record<string, { type: string; title: string }> = {
       STATE_ONBOARDING: { type: 'onboarding', title: 'Welcome to the Study' },
       STATE_PRE_SURVEY: { type: 'survey', title: 'Pre-interaction Survey' },
-      STATE_INTERACTION: { type: 'chat', title: 'Peer Support Group Chat' },
+      STATE_INTERACTION: { type: 'chat', title: 'Group Chat' },
       STATE_POST_SURVEY: { type: 'survey', title: 'Post-interaction Survey' },
       STATE_COMPLETE: { type: 'complete', title: 'Session Complete' },
     };
@@ -425,8 +426,12 @@ function App() {
       >
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Box>
+            {/* Named for the format, not the construct. "Peer Support Study"
+                told every participant that peers and support were the point,
+                which is a demand characteristic on the primary DV, and it was
+                also wrong for the 1-1 baseline, where there are no peers. */}
             <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-              Peer Support Study
+              Group Chat Study
             </Typography>
             {/* The assigned condition is a live demand characteristic. A
                 participant who can read "Condition: 3-1" off the header can

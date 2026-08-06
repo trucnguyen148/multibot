@@ -658,7 +658,10 @@ func (app *App) buildStageResponse(session *Session) StageConfig {
 		response.Title = "Pre-interaction Survey"
 	case StateInteraction:
 		response.Type = "chat"
-		response.Title = "Peer Support Group Chat"
+		// Names the format rather than the construct. "Peer Support Group Chat"
+		// announced peers and support to every participant, including the 1-1
+		// baseline that has neither.
+		response.Title = "Group Chat"
 		if conditionData, ok := app.data.Conditions[session.Condition]; ok {
 			response.AllScripts = conditionData.Stages
 		}

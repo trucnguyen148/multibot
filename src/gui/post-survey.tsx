@@ -67,6 +67,7 @@ export const PostSurvey: React.FC<PostSurveyProps> = ({
     'offline_support',
     'reflection',
     'held_back',
+    'Perceived_Humanness',
   ];
 
   const isComplete =
@@ -291,6 +292,64 @@ export const PostSurvey: React.FC<PostSurveyProps> = ({
                 />
               </Box>
             </Stack>
+          </Box>
+          <Divider />
+
+          {/* Perceived humanness of the other members. Added 2026-08-06 with the
+              decision to state up front that every chat member is AI, so the
+              question is how human-like they came across rather than whether the
+              participant was fooled. Asked last on purpose: an item about
+              artificiality placed earlier would reframe the chat before the
+              open-ended answers above are written, and those are the qualitative
+              DV. Rows collected before this date carry no Perceived_Humanness
+              key, the same situation as Self_Depth and held_back. */}
+          <Box>
+            <Typography variant="h6" gutterBottom color="primary">
+              One last question
+            </Typography>
+            <Typography variant="body2" sx={{ color: 'text.secondary', mb: 3 }}>
+              1 = Strongly Disagree, 7 = Strongly Agree
+            </Typography>
+            <Box>
+              <Typography variant="body1" gutterBottom>
+                The other chat members came across as human-like.
+              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 3, mt: 1 }}>
+                <Slider
+                  value={(postSurvey['Perceived_Humanness'] as number) || 4}
+                  min={1}
+                  max={7}
+                  step={1}
+                  marks
+                  onChange={(_, val) => handleSliderChange('post', 'Perceived_Humanness', val)}
+                  onChangeCommitted={(_, val) =>
+                    handleSliderChange('post', 'Perceived_Humanness', val)
+                  }
+                  sx={{
+                    color:
+                      postSurvey['Perceived_Humanness'] !== undefined ? 'primary.main' : 'grey.400',
+                    '& .MuiSlider-thumb': {
+                      display: postSurvey['Perceived_Humanness'] !== undefined ? 'flex' : 'none',
+                    },
+                  }}
+                />
+                <Typography
+                  variant="body2"
+                  sx={{
+                    color:
+                      postSurvey['Perceived_Humanness'] !== undefined
+                        ? 'success.main'
+                        : 'error.main',
+                    minWidth: '95px',
+                    fontWeight: 'bold',
+                  }}
+                >
+                  {postSurvey['Perceived_Humanness'] !== undefined
+                    ? `Score: ${postSurvey['Perceived_Humanness']}`
+                    : 'Unanswered'}
+                </Typography>
+              </Box>
+            </Box>
           </Box>
 
           <Button

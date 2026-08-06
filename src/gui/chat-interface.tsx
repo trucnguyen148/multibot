@@ -430,7 +430,7 @@ export const ChatInterface = ({
             gap: 2,
           }}
         >
-          <Typography variant="h6">Peer Support Chat</Typography>
+          <Typography variant="h6">Group Chat</Typography>
           {testMode && (
             <Button
               variant="contained"
