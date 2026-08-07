@@ -24,7 +24,7 @@ const mirrorFallback = "Thanks for sharing that."
 // the model can see in the history, including the peer disclosures, which makes
 // it a second manipulation riding on top of the peer-count one. The scripted
 // questions are byte-identical across cells for the same reason.
-const mirrorInvitation = "If there is anything else you would like to add, feel free. Otherwise we can move on."
+const mirrorInvitation = "Take your time if there is anything else you would like to explore about this, or let me know when you are ready to continue"
 
 // mirrorDeclineAck closes the stage for a participant who took the invitation
 // and chose not to add anything. There is nothing to mirror, so it cannot be
@@ -208,6 +208,9 @@ func mirrorSystemPrompt(present []string, participant string) string {
 		- Before replying, decide one thing: is the participant engaging with this conversation at all? Declining to answer, saying they have nothing to share, answering in a single word, and answering briefly or flatly all count as engaging, and are expected here. A bare refusal is an answer to the question that was asked. Anything that engages gets an ordinary acknowledgement.
 		- Only when a message does not engage with this conversation at all, reply with exactly %s and nothing else. That means random characters, filler such as "test test test", text copied back from the question, or a message about an unrelated subject.
 		- If you are unsure, it engages. Never use %s for a message that could be read as a genuine reply, however short, reluctant or negative.
+
+		- CRITICAL NAVIGATION RULE: If the user indicates they are ready to continue, move on, or have nothing else to add (e.g., "ready", "move on", "let's continue", "no"), you MUST treat this as a valid, cooperative response. Do NOT classify these navigational replies as uncooperative, off-topic, or not serious. Instead, output a graceful acknowledgement that they are ready to proceed.
+
 		- Your replies should be one sentence, at most two, roughly 15 to 30 words, and only what the participant's own message calls for.
 		- You should not output any personal opinions, advice, praise, or reflection, while keeping your tone neutral and supportive, without being overly enthusiastic or judgmental.
 		- Do not evaluate what the participant shares, and do not introduce topics they did not raise themselves.
