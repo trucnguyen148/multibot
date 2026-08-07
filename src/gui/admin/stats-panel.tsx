@@ -36,6 +36,10 @@ const formatDuration = (seconds: number): string => {
   return `${minutes}m ${remainder}s`;
 };
 
+// Four decimals because a single acknowledgement costs a fraction of a cent, and
+// rounding to two would print every per-participant figure as $0.00.
+const formatUSD = (amount: number): string => `$${amount.toFixed(4)}`;
+
 interface StatsPanelProps {
   stats: AdminStats;
 }
@@ -48,6 +52,21 @@ export const StatsPanel: React.FC<StatsPanelProps> = ({ stats }) => {
   const recentFallbackRate = recentMirrorTurns
     ? (stats.recent_mirror_fallback / recentMirrorTurns) * 100
     : 0;
+
+  // Absent from a backend that predates the cost table, so the panel must not
+  // assume it. An older deployment shows zeroes rather than a blank page.
+  const cost = stats.mirror_cost ?? {
+    calls: 0,
+    failed_calls: 0,
+    empty_inputs: 0,
+    sessions_billed: 0,
+    prompt_tokens: 0,
+    completion_tokens: 0,
+    cost_total: 0,
+    cost_per_session: 0,
+    cost_by_condition: {},
+    model: '—',
+  };
 
   return (
     <Stack spacing={3}>
@@ -170,6 +189,45 @@ export const StatsPanel: React.FC<StatsPanelProps> = ({ stats }) => {
             and the backend logs before recruiting further.
           </Alert>
         )}
+      </Paper>
+
+      {/* Reportable in the paper's methods, which is the reason it is recorded
+          per call rather than read off the OpenRouter dashboard. Test rows are
+          excluded here as everywhere else on this page. */}
+      <Paper variant="outlined" sx={{ p: 3, borderRadius: 2 }}>
+        <Typography variant="h6" gutterBottom>
+          What has generation cost?
+        </Typography>
+        <Typography variant="body2" sx={{ color: 'text.secondary', mb: 2 }}>
+          {cost.calls === 0
+            ? 'No host acknowledgement has been generated yet, so there is nothing to report.'
+            : `${formatUSD(cost.cost_per_session)} per participant on average, across ${cost.sessions_billed} participant(s) who reached the chat. Model ${cost.model}.`}
+        </Typography>
+        <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: 'wrap' }}>
+          <Chip size="small" variant="outlined" label={`Total: ${formatUSD(cost.cost_total)}`} />
+          <Chip size="small" variant="outlined" label={`Calls: ${cost.calls}`} />
+          <Chip
+            size="small"
+            variant="outlined"
+            label={`Tokens in / out: ${cost.prompt_tokens.toLocaleString()} / ${cost.completion_tokens.toLocaleString()}`}
+          />
+          {Object.entries(cost.cost_by_condition)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([condition, perParticipant]) => (
+              <Chip
+                key={condition}
+                size="small"
+                variant="outlined"
+                label={`${condition}: ${formatUSD(perParticipant)} per participant`}
+              />
+            ))}
+        </Stack>
+        <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 1.5 }}>
+          Recorded per call, so it survives a deleted transcript but not a deleted session. Failed
+          calls cost nothing and are counted separately ({cost.failed_calls} failed,{' '}
+          {cost.empty_inputs} empty submission(s) that never reached the model), so this total is
+          spend rather than a health signal.
+        </Typography>
       </Paper>
     </Stack>
   );

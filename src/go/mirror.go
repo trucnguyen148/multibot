@@ -391,9 +391,63 @@ func chatCompletionMessages(present []string, participant string, history []mirr
 	return messages
 }
 
-// callOpenRouter returns the model's raw reply, or an error. Callers fall back
-// on any error rather than surfacing it.
-func callOpenRouter(ctx context.Context, present []string, participant string, history []mirrorTurn, participantText string) (string, error) {
+// mirrorUsage is what OpenRouter reports about a call. It arrives in every
+// response without being asked for. Recorded per call because the paper has to
+// state inference cost, and a dashboard total cannot be broken down by
+// participant or by condition after the fact. Cost is in USD as charged to the
+// account.
+type mirrorUsage struct {
+	PromptTokens     int     `json:"prompt_tokens"`
+	CompletionTokens int     `json:"completion_tokens"`
+	TotalTokens      int     `json:"total_tokens"`
+	Cost             float64 `json:"cost"`
+}
+
+// Outcomes recorded in mirror_usage. They match the transcript's `mirror` field
+// with two differences. A declined turn is not recorded at all, since nothing was
+// ever going to be generated for it. And an empty submission is recorded as
+// empty-input rather than fallback, because it never reached OpenRouter, so
+// counting it as a generation failure would overstate how often the model fails.
+const (
+	mirrorOutcomeGenerated  = "generated"
+	mirrorOutcomeNotSerious = "not-serious"
+	mirrorOutcomeFallback   = "fallback"
+	mirrorOutcomeEmptyInput = "empty-input"
+)
+
+// recordMirrorCall writes one row per attempted acknowledgement and logs it.
+// It reports failure to the log and never to the caller: a participant's turn
+// must not depend on whether the accounting write succeeded.
+func (app *App) recordMirrorCall(sessionID, stage string, turnIndex int, outcome string, usage mirrorUsage, callErr error) {
+	detail := ""
+	if callErr != nil {
+		detail = callErr.Error()
+	}
+
+	app.logger.Info("mirror call",
+		"sessionId", sessionID, "stage", stage, "turnIndex", turnIndex,
+		"outcome", outcome, "model", mirrorModel,
+		"promptTokens", usage.PromptTokens, "completionTokens", usage.CompletionTokens,
+		"costUSD", usage.Cost)
+
+	_, err := app.db.Exec(`
+        INSERT INTO mirror_usage
+            (session_id, stage, turn_index, outcome, model,
+             prompt_tokens, completion_tokens, total_tokens, cost, error, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		sessionID, stage, turnIndex, outcome, mirrorModel,
+		usage.PromptTokens, usage.CompletionTokens, usage.TotalTokens, usage.Cost,
+		detail, time.Now().UTC().Format(time.RFC3339Nano))
+	if err != nil {
+		app.logger.Error("failed to record mirror usage",
+			"sessionId", sessionID, "stage", stage, "error", err)
+	}
+}
+
+// callOpenRouter returns the model's raw reply and what the call cost, or an
+// error. Callers fall back on any error rather than surfacing it. The usage
+// return is zero on every error path, since a failed call is not billed.
+func callOpenRouter(ctx context.Context, present []string, participant string, history []mirrorTurn, participantText string) (string, mirrorUsage, error) {
 	payload := map[string]any{
 		"model":      mirrorModel,
 		"max_tokens": mirrorMaxTokens,
@@ -414,19 +468,19 @@ func callOpenRouter(ctx context.Context, present []string, participant string, h
 
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return "", err
+		return "", mirrorUsage{}, err
 	}
 
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, mirrorEndpoint, bytes.NewReader(body))
 	if err != nil {
-		return "", err
+		return "", mirrorUsage{}, err
 	}
 	request.Header.Set("Authorization", "Bearer "+os.Getenv("OPENROUTER_API_KEY"))
 	request.Header.Set("Content-Type", "application/json")
 
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
-		return "", err
+		return "", mirrorUsage{}, err
 	}
 	defer response.Body.Close()
 
@@ -436,26 +490,27 @@ func callOpenRouter(ctx context.Context, present []string, participant string, h
 				Content string `json:"content"`
 			} `json:"message"`
 		} `json:"choices"`
+		Usage mirrorUsage `json:"usage"`
 		Error *struct {
 			Message string `json:"message"`
 		} `json:"error"`
 	}
 	if err := json.NewDecoder(response.Body).Decode(&parsed); err != nil {
-		return "", fmt.Errorf("decoding openrouter response (status %d): %w", response.StatusCode, err)
+		return "", mirrorUsage{}, fmt.Errorf("decoding openrouter response (status %d): %w", response.StatusCode, err)
 	}
 
 	// OpenRouter reports some failures as an error object inside a 200, so the
 	// status code alone is not enough to tell success from failure.
 	if parsed.Error != nil {
-		return "", fmt.Errorf("openrouter error (status %d): %s", response.StatusCode, parsed.Error.Message)
+		return "", mirrorUsage{}, fmt.Errorf("openrouter error (status %d): %s", response.StatusCode, parsed.Error.Message)
 	}
 	if response.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("openrouter returned status %d", response.StatusCode)
+		return "", mirrorUsage{}, fmt.Errorf("openrouter returned status %d", response.StatusCode)
 	}
 	if len(parsed.Choices) == 0 {
-		return "", fmt.Errorf("openrouter returned no choices")
+		return "", mirrorUsage{}, fmt.Errorf("openrouter returned no choices")
 	}
-	return parsed.Choices[0].Message.Content, nil
+	return parsed.Choices[0].Message.Content, parsed.Usage, nil
 }
 
 func (app *App) mirrorHandler(w http.ResponseWriter, r *http.Request) {
@@ -522,6 +577,8 @@ func (app *App) mirrorHandler(w http.ResponseWriter, r *http.Request) {
 
 	text := clampMirrorInput(payload.Text)
 	if text == "" {
+		app.recordMirrorCall(payload.SessionID, payload.Stage, payload.TurnIndex,
+			mirrorOutcomeEmptyInput, mirrorUsage{}, nil)
 		writeJSON(w, map[string]any{
 			"text":    hostReply(mirrorFallback, payload.TurnIndex),
 			"mirror":  "fallback",
@@ -539,10 +596,12 @@ func (app *App) mirrorHandler(w http.ResponseWriter, r *http.Request) {
 	participant := participantLabel(stringField(string(session.PreSurveyData), "display_name"))
 
 	present := presentPeers(session.Condition)
-	raw, err := callOpenRouter(ctx, present, participant, payload.History, text)
+	raw, usage, err := callOpenRouter(ctx, present, participant, payload.History, text)
 	if err != nil {
 		app.logger.Warn("mirror generation failed, using fallback",
 			"sessionId", payload.SessionID, "stage", payload.Stage, "error", err)
+		app.recordMirrorCall(payload.SessionID, payload.Stage, payload.TurnIndex,
+			mirrorOutcomeFallback, mirrorUsage{}, err)
 		writeJSON(w, map[string]any{
 			"text":    hostReply(mirrorFallback, payload.TurnIndex),
 			"mirror":  "fallback",
@@ -561,6 +620,9 @@ func (app *App) mirrorHandler(w http.ResponseWriter, r *http.Request) {
 	if notAnAnswer {
 		app.logger.Info("host judged a submission not a serious answer",
 			"sessionId", payload.SessionID, "stage", payload.Stage, "turnIndex", payload.TurnIndex)
+		// Billed like any other call, so it carries its usage.
+		app.recordMirrorCall(payload.SessionID, payload.Stage, payload.TurnIndex,
+			mirrorOutcomeNotSerious, usage, nil)
 		writeJSON(w, map[string]any{
 			"text":    hostReply(mirrorNotSerious, payload.TurnIndex),
 			"mirror":  "not-serious",
@@ -569,6 +631,8 @@ func (app *App) mirrorHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	app.recordMirrorCall(payload.SessionID, payload.Stage, payload.TurnIndex,
+		mirrorOutcomeGenerated, usage, nil)
 	writeJSON(w, map[string]any{
 		"text":    hostReply(sanitizeMirror(stripped), payload.TurnIndex),
 		"mirror":  "generated",

@@ -273,13 +273,14 @@ func (app *App) adminDeleteHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("id")
-	result, err := app.db.Exec(`DELETE FROM sessions WHERE user_id = ?`, id)
+	// Shares deleteSessions rather than issuing its own statement, so a single
+	// delete takes the session's cost rows with it exactly like a bulk one does.
+	affected, err := deleteSessions(app.db, []string{id})
 	if err != nil {
 		app.logger.Error("failed to delete session", "sessionId", id, "error", err)
 		http.Error(w, "Database error", http.StatusInternalServerError)
 		return
 	}
-	affected, _ := result.RowsAffected()
 	if affected == 0 {
 		http.Error(w, "Session not found", http.StatusNotFound)
 		return
@@ -406,10 +407,22 @@ func deleteSessions(db *sql.DB, ids []string) (int, error) {
 	}
 	defer statement.Close()
 
+	// The cost rows go with the session. SQLite enforces no cascade here, so
+	// leaving them would make the cost totals describe sessions that are gone.
+	// What was actually spent is still on the OpenRouter dashboard.
+	usageStatement, err := tx.Prepare(`DELETE FROM mirror_usage WHERE session_id = ?`)
+	if err != nil {
+		return 0, err
+	}
+	defer usageStatement.Close()
+
 	deleted := 0
 	for _, id := range ids {
 		result, err := statement.Exec(id)
 		if err != nil {
+			return 0, err
+		}
+		if _, err := usageStatement.Exec(id); err != nil {
 			return 0, err
 		}
 		affected, _ := result.RowsAffected()
@@ -446,6 +459,115 @@ type adminStats struct {
 	RecentSessionCount    int     `json:"recent_session_count"`
 	EmptyTranscripts      int     `json:"empty_transcripts"`
 	MedianCompletionSecs  float64 `json:"median_completion_seconds"`
+	// Inference cost, from the mirror_usage table rather than the transcripts,
+	// so it survives even when a transcript does not. Test sessions are excluded
+	// from every figure here, the same as everywhere else on this page. USD as
+	// charged by OpenRouter.
+	MirrorCost mirrorCostStats `json:"mirror_cost"`
+}
+
+// mirrorCostStats is what the paper needs. The per-participant mean is the
+// reportable number, and the per-condition breakdown is not flat, since the
+// history sent to the model grows through the chat and 1-1 has fewer turns in it.
+type mirrorCostStats struct {
+	Calls          int `json:"calls"`
+	FailedCalls    int `json:"failed_calls"`
+	EmptyInputs    int `json:"empty_inputs"`
+	SessionsBilled int `json:"sessions_billed"`
+	// PromptTokens and CompletionTokens are totals, useful for a methods
+	// sentence that has to survive a price change.
+	PromptTokens     int                `json:"prompt_tokens"`
+	CompletionTokens int                `json:"completion_tokens"`
+	CostTotal        float64            `json:"cost_total"`
+	CostPerSession   float64            `json:"cost_per_session"`
+	CostByCondition  map[string]float64 `json:"cost_by_condition"`
+	Model            string             `json:"model"`
+}
+
+// mirrorCostRow is one recorded call joined to the session that produced it. The
+// join carries pre_survey_data so test rows can be dropped with isTestSession,
+// which is the same rule the allocator and every other figure here uses.
+type mirrorCostRow struct {
+	sessionID  string
+	condition  string
+	preSurvey  string
+	outcome    string
+	prompt     int
+	completion int
+	cost       float64
+}
+
+func (app *App) loadMirrorCostRows() ([]mirrorCostRow, error) {
+	rows, err := app.db.Query(`
+        SELECT u.session_id, s.condition, COALESCE(s.pre_survey_data, ''),
+               u.outcome, u.prompt_tokens, u.completion_tokens, u.cost
+        FROM mirror_usage u
+        JOIN sessions s ON s.user_id = u.session_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []mirrorCostRow
+	for rows.Next() {
+		var row mirrorCostRow
+		if err := rows.Scan(&row.sessionID, &row.condition, &row.preSurvey,
+			&row.outcome, &row.prompt, &row.completion, &row.cost); err != nil {
+			return nil, err
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+// computeMirrorCosts aggregates the recorded calls. The per-session mean divides
+// by sessions that were actually billed rather than by every session in the
+// table, since a session that abandoned before the chat has no calls and would
+// otherwise drag the mean toward zero.
+func computeMirrorCosts(rows []mirrorCostRow) mirrorCostStats {
+	stats := mirrorCostStats{
+		CostByCondition: map[string]float64{},
+		Model:           mirrorModel,
+	}
+	billed := map[string]bool{}
+	sessionsByCondition := map[string]map[string]bool{}
+
+	for _, row := range rows {
+		if isTestSession(row.preSurvey) {
+			continue
+		}
+		stats.Calls++
+		switch row.outcome {
+		case mirrorOutcomeFallback:
+			stats.FailedCalls++
+		case mirrorOutcomeEmptyInput:
+			stats.EmptyInputs++
+		}
+		stats.PromptTokens += row.prompt
+		stats.CompletionTokens += row.completion
+		stats.CostTotal += row.cost
+		stats.CostByCondition[row.condition] += row.cost
+		if row.cost > 0 {
+			billed[row.sessionID] = true
+			if sessionsByCondition[row.condition] == nil {
+				sessionsByCondition[row.condition] = map[string]bool{}
+			}
+			sessionsByCondition[row.condition][row.sessionID] = true
+		}
+	}
+
+	stats.SessionsBilled = len(billed)
+	if stats.SessionsBilled > 0 {
+		stats.CostPerSession = stats.CostTotal / float64(stats.SessionsBilled)
+	}
+	// Per condition the useful figure is also per participant, not the pot spent
+	// on a cell that happens to have run more sessions than the others.
+	for condition, total := range stats.CostByCondition {
+		if count := len(sessionsByCondition[condition]); count > 0 {
+			stats.CostByCondition[condition] = total / float64(count)
+		}
+	}
+	return stats
 }
 
 // recentSessionWindow is how many of the newest real sessions the mirror-health
@@ -572,5 +694,15 @@ func (app *App) adminStatsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Database error", http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, computeStats(rows, app.conditions), app.logger)
+	stats := computeStats(rows, app.conditions)
+
+	costRows, err := app.loadMirrorCostRows()
+	if err != nil {
+		app.logger.Error("failed to read mirror usage for stats", "error", err)
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+	stats.MirrorCost = computeMirrorCosts(costRows)
+
+	writeJSON(w, stats, app.logger)
 }

@@ -554,3 +554,114 @@ func TestInitDBAddsUpdatedAtToAnExistingDatabase(t *testing.T) {
 		t.Fatal("expected saveSession to stamp updated_at")
 	}
 }
+
+// --- Inference cost accounting ---
+
+// The per-session mean is the number the paper reports, so it must divide by the
+// participants who actually produced calls rather than by every row in the table.
+func TestComputeMirrorCostsAveragesOverBilledParticipants(t *testing.T) {
+	rows := []mirrorCostRow{
+		{sessionID: "a", condition: "1-1", outcome: mirrorOutcomeGenerated, prompt: 100, completion: 20, cost: 0.01},
+		{sessionID: "a", condition: "1-1", outcome: mirrorOutcomeGenerated, prompt: 200, completion: 20, cost: 0.03},
+		{sessionID: "b", condition: "2-1", outcome: mirrorOutcomeGenerated, prompt: 300, completion: 20, cost: 0.04},
+		// A failed call is billed nothing and must not make its session look billed.
+		{sessionID: "c", condition: "2-1", outcome: mirrorOutcomeFallback},
+		// Neither must an empty submission, which never reached OpenRouter.
+		{sessionID: "d", condition: "3-1", outcome: mirrorOutcomeEmptyInput},
+	}
+
+	stats := computeMirrorCosts(rows)
+
+	if stats.Calls != 5 {
+		t.Fatalf("expected every attempt counted, got %d", stats.Calls)
+	}
+	if stats.FailedCalls != 1 || stats.EmptyInputs != 1 {
+		t.Fatalf("expected the two non-billed outcomes counted separately, got %d failed and %d empty",
+			stats.FailedCalls, stats.EmptyInputs)
+	}
+	if stats.SessionsBilled != 2 {
+		t.Fatalf("expected only the two sessions with spend, got %d", stats.SessionsBilled)
+	}
+	if stats.CostTotal < 0.0799 || stats.CostTotal > 0.0801 {
+		t.Fatalf("expected the costs summed to 0.08, got %v", stats.CostTotal)
+	}
+	// 0.08 over two billed participants, not over the four sessions present.
+	if stats.CostPerSession < 0.0399 || stats.CostPerSession > 0.0401 {
+		t.Fatalf("expected 0.04 per billed participant, got %v", stats.CostPerSession)
+	}
+	// 1-1 spent 0.04 across one participant, so its per-participant figure is 0.04.
+	if got := stats.CostByCondition["1-1"]; got < 0.0399 || got > 0.0401 {
+		t.Fatalf("expected 1-1 at 0.04 per participant, got %v", got)
+	}
+	if stats.PromptTokens != 600 || stats.CompletionTokens != 60 {
+		t.Fatalf("expected token totals 600/60, got %d/%d", stats.PromptTokens, stats.CompletionTokens)
+	}
+	if stats.Model != mirrorModel {
+		t.Fatalf("expected the model recorded, got %q", stats.Model)
+	}
+}
+
+// Test walkthroughs are excluded from every other figure on the page, and cost
+// is no different: their spend is real but it is not the study's.
+func TestComputeMirrorCostsExcludesTestSessions(t *testing.T) {
+	rows := []mirrorCostRow{
+		{sessionID: "real", condition: "1-1", preSurvey: `{"prolific_id":"x"}`, outcome: mirrorOutcomeGenerated, cost: 0.02},
+		{sessionID: "walk", condition: "1-1", preSurvey: `{"test_mode":true}`, outcome: mirrorOutcomeGenerated, cost: 5.0},
+	}
+
+	stats := computeMirrorCosts(rows)
+
+	if stats.Calls != 1 || stats.SessionsBilled != 1 {
+		t.Fatalf("expected the walkthrough dropped, got %d calls over %d sessions",
+			stats.Calls, stats.SessionsBilled)
+	}
+	if stats.CostTotal > 0.0201 {
+		t.Fatalf("expected the walkthrough's spend excluded, got %v", stats.CostTotal)
+	}
+}
+
+func TestRecordMirrorCallPersistsUsage(t *testing.T) {
+	app := newAdminTestApp(t)
+	now := time.Now().UTC()
+	insertRow(t, app.db, "sess-1", "2-1", StateInteraction, `{"prolific_id":"x"}`, "", now, now)
+
+	app.recordMirrorCall("sess-1", "STATE_CHAT_STAGE_1", 1, mirrorOutcomeGenerated,
+		mirrorUsage{PromptTokens: 120, CompletionTokens: 30, TotalTokens: 150, Cost: 0.0125}, nil)
+
+	rows, err := app.loadMirrorCostRows()
+	if err != nil {
+		t.Fatalf("loadMirrorCostRows: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected one recorded call, got %d", len(rows))
+	}
+	if rows[0].condition != "2-1" {
+		t.Fatalf("expected the join to carry the condition, got %q", rows[0].condition)
+	}
+	if rows[0].cost != 0.0125 || rows[0].prompt != 120 || rows[0].completion != 30 {
+		t.Fatalf("expected the usage stored verbatim, got %#v", rows[0])
+	}
+}
+
+// A recorded call belongs to its session. Leaving the rows behind would make the
+// cost totals describe participants who are no longer in the database.
+func TestDeletingASessionRemovesItsCostRows(t *testing.T) {
+	app := newAdminTestApp(t)
+	now := time.Now().UTC()
+	insertRow(t, app.db, "keep", "1-1", StateComplete, `{"prolific_id":"a"}`, "", now, now)
+	insertRow(t, app.db, "drop", "1-1", StateComplete, `{"prolific_id":"b"}`, "", now, now)
+	app.recordMirrorCall("keep", "STATE_CHAT_STAGE_1", 1, mirrorOutcomeGenerated, mirrorUsage{Cost: 0.01}, nil)
+	app.recordMirrorCall("drop", "STATE_CHAT_STAGE_1", 1, mirrorOutcomeGenerated, mirrorUsage{Cost: 0.02}, nil)
+
+	if _, err := deleteSessions(app.db, []string{"drop"}); err != nil {
+		t.Fatalf("deleteSessions: %v", err)
+	}
+
+	rows, err := app.loadMirrorCostRows()
+	if err != nil {
+		t.Fatalf("loadMirrorCostRows: %v", err)
+	}
+	if len(rows) != 1 || rows[0].sessionID != "keep" {
+		t.Fatalf("expected only the surviving session's cost rows, got %#v", rows)
+	}
+}

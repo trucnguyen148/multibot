@@ -706,6 +706,36 @@ func initDB(path string) (*sql.DB, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// One row per attempted host acknowledgement, written by recordMirrorCall.
+	// Separate from sessions because it is accounting rather than participant
+	// data, and because the paper needs inference cost per participant and per
+	// condition, which cannot be recovered from an OpenRouter dashboard total
+	// afterwards. Rows are deleted with their session, so the totals always
+	// describe the data actually held.
+	_, err = db.Exec(`
+        CREATE TABLE IF NOT EXISTS mirror_usage (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL,
+            stage TEXT NOT NULL,
+            turn_index INTEGER NOT NULL,
+            outcome TEXT NOT NULL,
+            model TEXT NOT NULL,
+            prompt_tokens INTEGER NOT NULL,
+            completion_tokens INTEGER NOT NULL,
+            total_tokens INTEGER NOT NULL,
+            cost REAL NOT NULL,
+            error TEXT,
+            created_at TEXT NOT NULL
+        )
+    `)
+	if err != nil {
+		return nil, err
+	}
+	if _, err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_mirror_usage_session ON mirror_usage (session_id)`); err != nil {
+		return nil, err
+	}
+
 	// Added later than the table, so existing volumes need the ALTER. Without a
 	// second timestamp there is no way to say how long a session took, since
 	// created_at is written the instant the page loads. Rows that predate the

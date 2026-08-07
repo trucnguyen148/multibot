@@ -42,6 +42,23 @@ export interface AdminStats {
   recent_session_count: number;
   empty_transcripts: number;
   median_completion_seconds: number;
+  mirror_cost: MirrorCostStats;
+}
+
+// Inference spend, recorded per call in the mirror_usage table. The paper has to
+// state this, and an OpenRouter dashboard total cannot be split by participant or
+// by condition after the fact.
+export interface MirrorCostStats {
+  calls: number;
+  failed_calls: number;
+  empty_inputs: number;
+  sessions_billed: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  cost_total: number;
+  cost_per_session: number;
+  cost_by_condition: Record<string, number>;
+  model: string;
 }
 
 export interface TranscriptMessage {
