@@ -68,7 +68,7 @@ interface ChatMessage {
 // constants in mirror.go or the two paths read differently in one transcript.
 const MIRROR_FALLBACK = 'Thanks for sharing that.';
 const MIRROR_INVITATION =
-  'If there is anything else you would like to add, feel free. Otherwise we can move on.';
+  'Take your time if there is anything else you would like to explore about this, or let me know when you are ready to continue.';
 const MIRROR_DECLINE_ACK = 'That is completely fine, thank you.';
 
 interface MirrorReply {

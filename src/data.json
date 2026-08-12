@@ -72,7 +72,7 @@
           },
           {
             "sender": "Sam",
-            "text": "For me it's mostly juggling a lot of small tasks and keeping the calendar under control.",
+            "text": "For me it's mostly juggling a lot of small tasks and trying to keep my calendar under control. It feels like there are never enough hours in the day, and just managing my schedule is a constant struggle.",
             "tag": "peer-neutral"
           },
           {
@@ -82,7 +82,7 @@
           },
           {
             "sender": "Sam",
-            "text": "End of term mostly, when everything lands in the same week.",
+            "text": "It always gets worse towards the end of the term. That's when everything seems to land in the exact same week.",
             "tag": "peer-neutral"
           },
           {
@@ -109,12 +109,12 @@
           },
           {
             "sender": "Sam",
-            "text": "I suppose I was worried it would look like I can't handle the job.",
+            "text": "I keep quiet because it would look like I can't handle the job. It feels like if I ask for help, they will think I don't belong here.",
             "tag": "disclosure"
           },
           {
             "sender": "Vieno",
-            "text": "That is not an easy thing to put into words. [User's Name], is there a moment like that for you?",
+            "text": "That's not an easy thing to put into words. [User's Name], is there a moment like that for you?",
             "tag": "ack"
           }
         ],
@@ -126,7 +126,7 @@
           },
           {
             "sender": "Sam",
-            "text": "It's exhausting pretending everything is fine all the time.",
+            "text": "It's exhausting pretending everything is fine all the time. You feel like you have to wear a mask just to get through the day.",
             "tag": "disclosure"
           },
           {
@@ -136,7 +136,7 @@
           },
           {
             "sender": "Sam",
-            "text": "A bit, actually. Talking about it like this makes me feel less alone with it.",
+            "text": "A bit, actually. Talking about it like this makes me feel less alone with it. It helps to know that other people are secretly struggling with the same things.",
             "tag": "disclosure"
           },
           {
@@ -178,12 +178,12 @@
           },
           {
             "sender": "Sam",
-            "text": "For me it's mostly juggling a lot of small tasks.",
+            "text": "For me it's mostly juggling a lot of small tasks. It feels like there are never enough hours in the day.",
             "tag": "peer-neutral"
           },
           {
             "sender": "Charlie",
-            "text": "Same, mostly keeping the calendar under control.",
+            "text": "Same here, mostly trying to keep my calendar under control. Just managing my schedule is a constant struggle.",
             "tag": "peer-neutral"
           },
           {
@@ -193,7 +193,7 @@
           },
           {
             "sender": "Charlie",
-            "text": "End of term mostly, when everything lands in the same week.",
+            "text": "It always gets worse towards the end of the term. That's when everything seems to land in the exact same week.",
             "tag": "peer-neutral"
           },
           {
@@ -220,12 +220,12 @@
           },
           {
             "sender": "Charlie",
-            "text": "Same here. I keep quiet because it would look like I can't handle the job.",
+            "text": "Same here. I keep quiet because it would look like I can't handle the job. It feels like if I ask for help, they will think I don't belong here.",
             "tag": "disclosure"
           },
           {
             "sender": "Vieno",
-            "text": "That is not an easy thing to put into words. [User's Name], is there a moment like that for you?",
+            "text": "That's not an easy thing to put into words. [User's Name], is there a moment like that for you?",
             "tag": "ack"
           }
         ],
@@ -237,7 +237,7 @@
           },
           {
             "sender": "Sam",
-            "text": "It's exhausting pretending everything is fine all the time.",
+            "text": "It's exhausting pretending everything is fine all the time. You feel like you have to wear a mask just to get through the day.",
             "tag": "disclosure"
           },
           {
@@ -247,7 +247,7 @@
           },
           {
             "sender": "Charlie",
-            "text": "A bit, yeah. Talking about it like this makes me feel less alone with it.",
+            "text": "A bit, yeah. Talking about it like this makes me feel less alone with it. It helps to know that other people are secretly struggling with the same things.",
             "tag": "disclosure"
           },
           {

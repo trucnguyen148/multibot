@@ -7,11 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"math/rand"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -254,7 +254,7 @@ func (app *App) createSessionHandler(w http.ResponseWriter, r *http.Request) {
 		if requested != "" {
 			app.logger.Warn("ignored condition override outside test mode", "condition", requested)
 		}
-		condition, err = app.randomCondition()
+		condition, err = app.assignCondition()
 		if err != nil {
 			app.logger.Warn("condition assignment quota reached", "error", err)
 			http.Error(w, "Condition allocation is full", http.StatusConflict)
@@ -597,7 +597,7 @@ func (app *App) testCondition(requested string) (string, error) {
 		return "", fmt.Errorf("no conditions configured")
 	}
 	if requested == "" {
-		return app.conditions[rand.Intn(len(app.conditions))], nil
+		return app.conditions[0], nil
 	}
 	if _, known := app.data.Conditions[requested]; !known {
 		return "", fmt.Errorf("unknown condition %q", requested)
@@ -605,7 +605,7 @@ func (app *App) testCondition(requested string) (string, error) {
 	return requested, nil
 }
 
-func (app *App) randomCondition() (string, error) {
+func (app *App) assignCondition() (string, error) {
 	if len(app.conditions) == 0 {
 		return "1-1", nil
 	}
@@ -640,7 +640,12 @@ func (app *App) selectCondition(tally conditionTally) (string, error) {
 	if len(candidates) == 0 {
 		return "", fmt.Errorf("condition allocation is full")
 	}
-	return candidates[rand.Intn(len(candidates))], nil
+	
+	// Sort alphabetically to guarantee a strict round-robin order (1-1, 2-1, 3-1)
+	sort.Strings(candidates)
+	
+	// Always pick the first available condition deterministically
+	return candidates[0], nil
 }
 
 func (app *App) buildStageResponse(session *Session) StageConfig {
