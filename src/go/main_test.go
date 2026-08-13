@@ -238,3 +238,28 @@ func TestSelectConditionFullOnlyWhenEveryCellComplete(t *testing.T) {
 		t.Fatal("expected allocation to be full once every cell met its target")
 	}
 }
+
+// The tie-break must not be deterministic. A session is invisible to
+// tallyConditions until it leaves onboarding, so every arrival in that window
+// reads the same counts. A fixed pick sends all of them to the same cell, which
+// turns a burst of Prolific arrivals into a one-sided allocation.
+func TestSelectConditionSpreadsTiedCells(t *testing.T) {
+	app := &App{conditions: []string{"1-1", "2-1", "3-1"}}
+
+	tied := conditionTally{
+		started:   map[string]int{"1-1": 4, "2-1": 4, "3-1": 4},
+		completed: map[string]int{"1-1": 1, "2-1": 1, "3-1": 1},
+	}
+
+	seen := map[string]bool{}
+	for i := 0; i < 60; i++ {
+		got, err := app.selectCondition(tied)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		seen[got] = true
+	}
+	if len(seen) < 2 {
+		t.Fatalf("expected tied cells to be spread across draws, only ever got %v", seen)
+	}
+}

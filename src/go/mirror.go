@@ -24,7 +24,7 @@ const mirrorFallback = "Thanks for sharing that."
 // the model can see in the history, including the peer disclosures, which makes
 // it a second manipulation riding on top of the peer-count one. The scripted
 // questions are byte-identical across cells for the same reason.
-const mirrorInvitation = "Take your time if there is anything else you would like to explore about this, or let me know when you are ready to continue"
+const mirrorInvitation = "Take your time if there is anything else you would like to explore about this, or let me know when you are ready to continue."
 
 // mirrorDeclineAck closes the stage for a participant who took the invitation
 // and chose not to add anything. There is nothing to mirror, so it cannot be

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -328,5 +330,31 @@ func TestClampMirrorInputTrimsOversizedText(t *testing.T) {
 	}
 	if got := clampMirrorInput("  short  "); got != "short" {
 		t.Errorf("clampMirrorInput(%q) = %q, want %q", "  short  ", got, "short")
+	}
+}
+
+// The frontend keeps its own copy of the host's fixed lines, for the case where
+// the request never reaches the server. It copies them by hand, so nothing but
+// this test stops the two drifting apart, and a drift puts two spellings of one
+// fixed constant into the same transcript. A missing full stop is how it drifted
+// on 2026-08-08.
+func TestFixedHostLinesMatchTheFrontendCopies(t *testing.T) {
+	source, err := os.ReadFile(filepath.Join("..", "gui", "chat-interface.tsx"))
+	if err != nil {
+		t.Fatalf("reading the frontend chat interface: %v", err)
+	}
+	frontend := string(source)
+
+	for _, line := range []struct {
+		name  string
+		value string
+	}{
+		{"mirrorFallback", mirrorFallback},
+		{"mirrorInvitation", mirrorInvitation},
+		{"mirrorDeclineAck", mirrorDeclineAck},
+	} {
+		if !strings.Contains(frontend, line.value) {
+			t.Errorf("%s is not present verbatim in chat-interface.tsx: %q", line.name, line.value)
+		}
 	}
 }

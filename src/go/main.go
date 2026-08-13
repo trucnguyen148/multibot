@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math/rand"
 	"net/http"
 	"os"
 	"os/signal"
@@ -640,12 +641,22 @@ func (app *App) selectCondition(tally conditionTally) (string, error) {
 	if len(candidates) == 0 {
 		return "", fmt.Errorf("condition allocation is full")
 	}
-	
-	// Sort alphabetically to guarantee a strict round-robin order (1-1, 2-1, 3-1)
+
+	// The sequencing lives in the fewest-started rule above, which is already
+	// deterministic. This line only breaks a tie, and it has to stay random.
+	//
+	// A session is invisible to tallyConditions until it leaves onboarding, which
+	// takes about a minute of reading and consenting. Every arrival inside that
+	// window therefore reads the same counts. Taking the alphabetically first
+	// candidate sends all of them to the same cell, so a burst of Prolific
+	// arrivals lands entirely in 1-1 and the imbalance is larger than it was
+	// before, not smaller. Random tie-breaking spreads that burst across the tied
+	// cells, and the next tally corrects whatever it overshot.
+	//
+	// Ordering candidates first keeps the draw reproducible in shape: the same
+	// tally always offers the same candidate set, only the pick inside it varies.
 	sort.Strings(candidates)
-	
-	// Always pick the first available condition deterministically
-	return candidates[0], nil
+	return candidates[rand.Intn(len(candidates))], nil
 }
 
 func (app *App) buildStageResponse(session *Session) StageConfig {
