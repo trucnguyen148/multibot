@@ -11,7 +11,7 @@ import (
 // loadScripts reads the same data.json the server reads at startup.
 func loadScripts(t *testing.T) experimentData {
 	t.Helper()
-	content, err := os.ReadFile("data.json")
+	content, err := os.ReadFile("../data.json")
 	if err != nil {
 		t.Fatalf("failed to read data.json: %v", err)
 	}

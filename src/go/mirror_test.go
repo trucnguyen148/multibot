@@ -24,7 +24,6 @@ func TestMirrorSystemPromptConstrainsTheHost(t *testing.T) {
 		// earlier than the structure does. Both would put the number of
 		// invitations to disclose back under the model's control.
 		"Do not ask the participant any question",
-		"do not invite them to say more",
 		// Observed in testing: given a short participant turn, the host reached
 		// back into the history and acknowledged a peer's disclosure as though
 		// the participant had made it. Only the peer conditions have peers, so
@@ -92,7 +91,7 @@ func TestExtractNotAnAnswerStripsTheMarker(t *testing.T) {
 			t.Errorf("extractNotAnAnswer(%q) = (%q, %v), want (%q, %v)",
 				tc.in, text, flagged, tc.wantText, tc.wantFlagged)
 		}
-		if strings.Contains(sanitizeMirror(text), notAnAnswerMarker) {
+		if cleaned, _ := sanitizeMirror(text); strings.Contains(cleaned, notAnAnswerMarker) {
 			t.Errorf("the marker survived sanitizing for input %q", tc.in)
 		}
 	}
@@ -245,42 +244,36 @@ func TestParticipantLabelIsSafeToInterpolate(t *testing.T) {
 	}
 }
 
-// Every participant gets exactly one invitation to add more, on the first turn
-// of the stage. A second one would be a second chance to disclose that other
-// participants did not get.
-func TestHostReplyInvitesExactlyOnce(t *testing.T) {
+// Every participant gets the invitation to add more on every turn, so it is
+// never a free variable that could correlate with condition or with turn
+// count.
+func TestHostReplyAlwaysInvites(t *testing.T) {
 	ack := "That sounds like a lot to carry."
 
-	first := hostReply(ack, 1)
-	if !strings.Contains(first, mirrorInvitation) {
-		t.Errorf("hostReply(%q, 1) = %q, want it to carry the invitation", ack, first)
+	got := hostReply(ack)
+	if !strings.Contains(got, mirrorInvitation) {
+		t.Errorf("hostReply(%q) = %q, want it to carry the invitation", ack, got)
 	}
-	if !strings.HasPrefix(first, ack) {
-		t.Errorf("hostReply(%q, 1) = %q, want the acknowledgement to come first", ack, first)
-	}
-
-	last := hostReply(ack, mirrorTurnsPerStage)
-	if strings.Contains(last, mirrorInvitation) {
-		t.Errorf("hostReply(%q, %d) = %q, want no invitation on the closing turn",
-			ack, mirrorTurnsPerStage, last)
-	}
-	if last != ack {
-		t.Errorf("hostReply(%q, %d) = %q, want the acknowledgement unchanged",
-			ack, mirrorTurnsPerStage, last)
+	if !strings.HasPrefix(got, ack) {
+		t.Errorf("hostReply(%q) = %q, want the acknowledgement to come first", ack, got)
 	}
 }
 
 // The invitation is appended after sanitizeMirror, so it must survive the
-// one-sentence and word-count clamps that would otherwise eat it.
+// sentence and word-count clamps that would otherwise eat it.
 func TestHostReplyInvitationSurvivesSanitizing(t *testing.T) {
 	long := strings.Repeat("word ", 200) + "."
-	got := hostReply(sanitizeMirror(long), 1)
+	cleaned, ok := sanitizeMirror(long)
+	if !ok {
+		t.Fatalf("sanitizeMirror(%q) reported not ok, want ok", long)
+	}
+	got := hostReply(cleaned)
 	if !strings.HasSuffix(got, mirrorInvitation) {
 		t.Errorf("hostReply lost the invitation after a clamped acknowledgement: %q", got)
 	}
 }
 
-func TestSanitizeMirrorCollapsesToOneSentence(t *testing.T) {
+func TestSanitizeMirrorCollapsesToTwoSentences(t *testing.T) {
 	cases := []struct {
 		name string
 		in   string
@@ -288,15 +281,14 @@ func TestSanitizeMirrorCollapsesToOneSentence(t *testing.T) {
 	}{
 		{"already one sentence", "That sounds like a lot to carry.", "That sounds like a lot to carry."},
 		{"trims whitespace", "  That sounds hard.  ", "That sounds hard."},
-		{"keeps only the first sentence", "That sounds hard. You should talk to someone.", "That sounds hard."},
+		{"keeps the acknowledgement and the invitation", "That sounds hard. " + mirrorInvitation, "That sounds hard. " + mirrorInvitation},
+		// A third sentence beyond the acknowledgement and the invitation is
+		// clamped away: two sentences is the model's whole budget, and a third
+		// one reaching the participant is advice or interpretation, which
+		// changes what the study measured.
+		{"drops a third sentence", "That sounds hard. " + mirrorInvitation + " You should talk to someone.", "That sounds hard. " + mirrorInvitation},
 		{"drops a leaked reasoning block", "<thinking>hm</thinking>That sounds hard.", "That sounds hard."},
 		{"drops a stray unpaired tag", "That sounds <b>hard.", "That sounds hard."},
-		{"empty falls back", "   ", mirrorFallback},
-		{"tags only falls back", "<thinking>hm</thinking>", mirrorFallback},
-		// Truncation is deliberately aggressive. Clipping an abbreviation is
-		// cosmetic; letting a tacked-on second sentence of advice reach a
-		// participant changes what the study measured.
-		{"cuts at an abbreviation rather than risk a second sentence", "That sounds like a lot, esp. right now.", "That sounds like a lot, esp."},
 		// A terminator inside a word is not a sentence end, so a decimal or a
 		// URL does not split the reply mid-token.
 		{"a terminator inside a word is not a sentence end", "You lost 2.5 days to that.", "You lost 2.5 days to that."},
@@ -305,8 +297,35 @@ func TestSanitizeMirrorCollapsesToOneSentence(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := sanitizeMirror(tc.in); got != tc.want {
+			got, ok := sanitizeMirror(tc.in)
+			if !ok {
+				t.Fatalf("sanitizeMirror(%q) reported not ok, want ok", tc.in)
+			}
+			if got != tc.want {
 				t.Errorf("sanitizeMirror(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+// Nothing usable must never be papered over with a substitute line: the
+// caller is responsible for reporting this to the participant as an error.
+func TestSanitizeMirrorReportsNotOkWhenNothingSurvives(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+	}{
+		{"empty", "   "},
+		{"tags only", "<thinking>hm</thinking>"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := sanitizeMirror(tc.in)
+			if ok {
+				t.Errorf("sanitizeMirror(%q) reported ok with cleaned = %q, want not ok", tc.in, got)
+			}
+			if got != "" {
+				t.Errorf("sanitizeMirror(%q) = %q, want empty when not ok", tc.in, got)
 			}
 		})
 	}
@@ -314,9 +333,13 @@ func TestSanitizeMirrorCollapsesToOneSentence(t *testing.T) {
 
 func TestSanitizeMirrorBoundsLength(t *testing.T) {
 	long := strings.Repeat("word ", 200) + "."
-	got := sanitizeMirror(long)
-	if len(strings.Fields(got)) > 30 {
-		t.Errorf("sanitizeMirror returned %d words, want at most 30", len(strings.Fields(got)))
+	got, ok := sanitizeMirror(long)
+	if !ok {
+		t.Fatalf("sanitizeMirror(_) reported not ok, want ok")
+	}
+	wordLimit := maxMirrorWords + len(strings.Fields(mirrorInvitationAlt))
+	if len(strings.Fields(got)) > wordLimit {
+		t.Errorf("sanitizeMirror(_) returned %d words, want at most %d", len(strings.Fields(got)), wordLimit)
 	}
 }
 
@@ -333,11 +356,17 @@ func TestClampMirrorInputTrimsOversizedText(t *testing.T) {
 	}
 }
 
-// The frontend keeps its own copy of the host's fixed lines, for the case where
-// the request never reaches the server. It copies them by hand, so nothing but
-// this test stops the two drifting apart, and a drift puts two spellings of one
-// fixed constant into the same transcript. A missing full stop is how it drifted
-// on 2026-08-08.
+// The frontend keeps its own copy of the host's fixed lines that it can still
+// need offline: the decline acknowledgement, and the apology shown when a
+// mirror turn produces nothing usable. It copies them by hand, so nothing but
+// this test stops the two drifting apart, and a drift puts two spellings of
+// one fixed constant into the same transcript. A missing full stop is how it
+// drifted on 2026-08-08.
+//
+// mirrorInvitation is not checked here: it is only ever appended server-side
+// (in hostReply, or by the model itself), never duplicated in the frontend,
+// since an offline turn now shows the error dialog rather than inventing a
+// line to say instead.
 func TestFixedHostLinesMatchTheFrontendCopies(t *testing.T) {
 	source, err := os.ReadFile(filepath.Join("..", "gui", "chat-interface.tsx"))
 	if err != nil {
@@ -349,8 +378,7 @@ func TestFixedHostLinesMatchTheFrontendCopies(t *testing.T) {
 		name  string
 		value string
 	}{
-		{"mirrorFallback", mirrorFallback},
-		{"mirrorInvitation", mirrorInvitation},
+		{"mirrorErrorMessage", mirrorErrorMessage},
 		{"mirrorDeclineAck", mirrorDeclineAck},
 	} {
 		if !strings.Contains(frontend, line.value) {

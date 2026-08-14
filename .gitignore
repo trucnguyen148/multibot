@@ -29,5 +29,9 @@ yarn-error.log*
 /src/go/multibot
 /src/go/sessions.db
 
+# exported participant transcripts (contains real chat data)
+/src/transcripts
+
 # browser automation artifacts
 .playwright-mcp/
+ED362822-1.pdf
