@@ -21,7 +21,7 @@
           },
           {
             "sender": "Vieno",
-            "text": "Let's start with the everyday stuff. [User's Name], What are the typical challenges you face in your daily professional or academic life?",
+            "text": "Let's start with the everyday stuff. [User's Name], what are the typical challenges you face in your daily professional or academic life?",
             "tag": "ack"
           }
         ],
@@ -33,7 +33,7 @@
           },
           {
             "sender": "Vieno",
-            "text": "[User's Name],  is there a specific moment recently where you felt overwhelmed by expectations but felt you couldn't share it?",
+            "text": "[User's Name], is there a specific moment recently where you felt overwhelmed by expectations but felt you couldn't share it?",
             "tag": "ack"
           }
         ],
@@ -206,7 +206,7 @@
           },
           {
             "sender": "Vieno",
-            "text": "Thank you, Sam. How about you, [User's Name], is there a specific professional or academic challenge you'd feel comfortable going into?",
+            "text": "Thank you, Sam. [User's Name], is there a specific professional or academic challenge you'd feel comfortable going into?",
             "tag": "ack"
           }
         ]
@@ -382,7 +382,7 @@
           },
           {
             "sender": "Vieno",
-            "text": "[User's Name], how about you? Is there a specific professional or academic challenge you'd feel comfortable going into?",
+            "text": "[User's Name], is there a specific professional or academic challenge you'd feel comfortable going into?",
             "tag": "ack"
           }
         ]
