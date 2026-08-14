@@ -1,8 +1,7 @@
 services:
   backend:
     build:
-      context: .
-      dockerfile: src/go/Dockerfile
+      context: ./src/go
     ports:
       - "8080:8080"
     environment:

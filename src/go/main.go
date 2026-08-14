@@ -122,12 +122,12 @@ func main() {
 	dataDir := getEnvOrDefault("DATA_DIR", root)
 	allowedOrigin := getEnvOrDefault("ALLOWED_ORIGIN", "*")
 
-	dataPath := filepath.Join(root, "data.json")
-	content, err := os.ReadFile(dataPath)
+	dataPath, content, err := readScripts(root)
 	if err != nil {
 		logger.Error("failed to read data.json", "error", err)
 		os.Exit(1)
 	}
+	logger.Info("loaded scripts", "path", dataPath)
 
 	var appData experimentData
 	if err := json.Unmarshal(content, &appData); err != nil {
@@ -862,6 +862,43 @@ func getEnvOrDefault(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+// readScripts locates data.json and returns the path it used alongside the
+// bytes, so the startup log records which copy is live.
+//
+// The file is checked into src/data.json and copied to src/go/data.json, and
+// which one is reachable depends entirely on how the service was built. The
+// Dockerfile builds from the repository root and copies src/data.json next to
+// the binary. Railway builds the backend from src/go alone, so nothing above
+// that directory is uploaded and only the sibling copy exists. Running
+// `go run .` during development sees both.
+//
+// Hardcoding one path broke deployment once already: src/go/data.json was
+// deleted in favour of a single copy, which left the Railway build with no
+// scripts at all and the service exiting at startup. Searching in order costs
+// nothing and removes the coupling between the build layout and the code.
+//
+// DATA_FILE overrides everything, for the case where a future build puts the
+// scripts somewhere neither branch predicts.
+func readScripts(root string) (string, []byte, error) {
+	candidates := []string{
+		filepath.Join(root, "data.json"),
+		filepath.Join(root, "..", "data.json"),
+	}
+	if override := os.Getenv("DATA_FILE"); override != "" {
+		candidates = []string{override}
+	}
+
+	var lastErr error
+	for _, candidate := range candidates {
+		content, err := os.ReadFile(candidate)
+		if err == nil {
+			return candidate, content, nil
+		}
+		lastErr = err
+	}
+	return "", nil, fmt.Errorf("no data.json in any of %v: %w", candidates, lastErr)
 }
 
 func sanitizeSurveyData(data map[string]any) map[string]any {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"math"
 	"os"
@@ -20,6 +21,27 @@ func loadScripts(t *testing.T) experimentData {
 		t.Fatalf("failed to parse data.json: %v", err)
 	}
 	return data
+}
+
+// The scripts exist twice, because the Docker build reads src/data.json and the
+// Railway build reads src/go/data.json, and neither build can see the other's
+// copy. Nothing except this test stops them drifting, and a drift means the
+// frontend plays one script while the backend serves another.
+//
+// If this fails, copy src/data.json over src/go/data.json. Never edit only one.
+func TestBothScriptCopiesAreIdentical(t *testing.T) {
+	root, err := os.ReadFile("../data.json")
+	if err != nil {
+		t.Fatalf("failed to read src/data.json: %v", err)
+	}
+	sibling, err := os.ReadFile("data.json")
+	if err != nil {
+		t.Fatalf("failed to read src/go/data.json: %v", err)
+	}
+	if !bytes.Equal(root, sibling) {
+		t.Fatalf("src/data.json and src/go/data.json differ (%d vs %d bytes); copy one over the other",
+			len(root), len(sibling))
+	}
 }
 
 func turnsWithTag(turns []BotScript, tag string) []BotScript {

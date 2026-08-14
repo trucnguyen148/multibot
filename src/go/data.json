@@ -1,0 +1,392 @@
+{
+  "_designNotes": {
+    "_source": "Gladding, S. T. (1994). Effective Group Counseling. ERIC/CASS. Page numbers below are the book's own pagination, not PDF pages. This field is not read by the app; json.Unmarshal in main.go ignores unknown keys, so it is safe to keep as documentation only.",
+    "stage1_greetings": "p.79: 'Introductions personalize relationships, help establish trust, and contribute to the building of teamwork as group members become better acquainted.' Sam/Charlie's scripted 'quick hello' before any question is this introductions step, kept uncounted toward their per-stage turn totals since it is not disclosure.",
+    "stage1_content_is_neutral": "p.86: after introductions the group is 'in a state of flux' (Berne's 'What Do You Say After You Say Hello?') and members are 'usually too unsure of themselves to begin addressing matters of concern.' Stage 1's everyday-challenges content is deliberately light and neutral for both peers and the participant, matching this transitional period rather than opening on disclosure.",
+    "escalating_disclosure_across_stages": "p.113 (working stage): 'The stronger the level of cohesion, the more likely group members will be to support one another and self-disclose.' Cohesion has to build before deeper sharing is realistic, which is why peer content is neutral in stage 1, moderate ('disclosure' tag) in stage 2, and most personal in stage 3, rather than starting deep.",
+    "vieno_accepts_at_face_value": "p.84: 'A good guideline for initially working with a group is to accept what members say at face value. This type of acceptance lowers resistance and encourages participation.' Vieno's acknowledgements to Sam and Charlie, like her acknowledgements to the participant, never evaluate, interpret, or add to what was said.",
+    "vieno_invitation_line": "p.110 (working stage): successful groups show 'a willingness to risk ideas and be fully known' and 'a feeling of hopefulness.' Vieno's invitation lines (e.g. 'We have plenty of time, if you would like to share more.') extend that room without pressing for it. Wording is varied across turns to avoid sounding scripted, but each variant carries the same no-pressure invitation. The six variants are matched by stage and turn position between conditions 2-1 and 3-1 (e.g. stage 2's first invitation is worded identically for Sam in 2-1 and for Sam in 3-1) so wording choice does not become a confound between conditions.",
+    "equitable_turn_balance": "pp.115-116 (team building): 'If individuals feel their contributions are not valued they will be less likely to contribute to the overall quality of the group.' Condition 2-1 gives Sam 4 turns per stage; condition 3-1 gives Sam and Charlie 2 turns per stage each. Total peer disclosure volume per stage (4 turns) is held constant across conditions so peer count alone, not unequal airtime, is what varies between them.",
+    "vieno_closes_a_turn_before_moving_on": "p.88: 'the best way to end a group is to be sure that material brought up is summarized and group members are reminded' before the group moves on. Vieno's transition lines (e.g. 'Thanks, Sam. [User's Name], what does an ordinary week look like for you?') close out a peer's turn before addressing the next speaker rather than leaving it hanging."
+  },
+  "conditions": {
+    "1-1": {
+      "label": "Host only, no modelled disclosure",
+      "stages": {
+        "STATE_CHAT_STAGE_1": [
+          {
+            "sender": "Vieno",
+            "text": "Hi [User's Name], thanks for joining today. I'm Vieno, and I'll be hosting this chat. We'll spend a short time talking through everyday work and study pressures, and nothing said here is used against you, it's only recorded for research purposes.",
+            "tag": "open"
+          },
+          {
+            "sender": "Vieno",
+            "text": "Let's start with the everyday stuff. [User's Name], what are the typical challenges you face in your daily professional or academic life?",
+            "tag": "ack"
+          }
+        ],
+        "STATE_CHAT_STAGE_2": [
+          {
+            "sender": "Vieno",
+            "text": "Let's go a bit deeper.",
+            "tag": "question"
+          },
+          {
+            "sender": "Vieno",
+            "text": "[User's Name], is there a specific moment recently where you felt overwhelmed by expectations but felt you couldn't share it?",
+            "tag": "ack"
+          }
+        ],
+        "STATE_CHAT_STAGE_3": [
+          {
+            "sender": "Vieno",
+            "text": "We've covered a lot of ground.",
+            "tag": "question"
+          },
+          {
+            "sender": "Vieno",
+            "text": "[User's Name], is there a specific professional or academic challenge you'd feel comfortable going into?",
+            "tag": "ack"
+          }
+        ]
+      }
+    },
+    "2-1": {
+      "label": "Host and one disclosing peer",
+      "stages": {
+        "STATE_CHAT_STAGE_1": [
+          {
+            "sender": "Vieno",
+            "text": "Hi everyone, thanks for joining today. I'm Vieno, and I'll be hosting this chat. We'll spend a short time talking through everyday work and study pressures, and nothing said here is used against you, it's only recorded for research purposes.",
+            "tag": "open"
+          },
+          {
+            "sender": "Vieno",
+            "text": "Sam, would you like to say a quick hello before we start?",
+            "tag": "open"
+          },
+          {
+            "sender": "Sam",
+            "text": "Hey, glad to be here.",
+            "tag": "peer-neutral"
+          },
+          {
+            "sender": "Vieno",
+            "text": "Let's start with the everyday stuff. What are the typical challenges you face in your daily professional or academic life?",
+            "tag": "question"
+          },
+          {
+            "sender": "Sam",
+            "text": "For me it's mostly juggling a lot of small tasks and trying to keep my calendar under control.",
+            "tag": "peer-neutral"
+          },
+          {
+            "sender": "Vieno",
+            "text": "That sounds familiar, Sam. There's no rush at all, feel free to say more if you'd like.",
+            "tag": "facilitation"
+          },
+          {
+            "sender": "Sam",
+            "text": "It always gets worse towards the end of the term. That's when everything seems to land in the exact same week.",
+            "tag": "peer-neutral"
+          },
+          {
+            "sender": "Vieno",
+            "text": "Thanks for sharing that, Sam. We are doing great with time, so if you want to add more, please do.",
+            "tag": "facilitation"
+          },
+          {
+            "sender": "Sam",
+            "text": "Probably that everyone expects an instant reply, even outside working hours.",
+            "tag": "peer-neutral"
+          },
+          {
+            "sender": "Vieno",
+            "text": "That makes sense, Sam. Take all the time you need, we're glad to hear more.",
+            "tag": "facilitation"
+          },
+          {
+            "sender": "Sam",
+            "text": "It's manageable most days, but it adds up fast when a few things collide at once.",
+            "tag": "peer-neutral"
+          },
+          {
+            "sender": "Vieno",
+            "text": "Thanks, Sam. [User's Name], what are the typical challenges you face in your daily professional or academic life?",
+            "tag": "ack"
+          }
+        ],
+        "STATE_CHAT_STAGE_2": [
+          {
+            "sender": "Vieno",
+            "text": "Let's go a bit deeper. Is there a specific moment recently where you felt overwhelmed by expectations but felt you couldn't share it?",
+            "tag": "question"
+          },
+          {
+            "sender": "Sam",
+            "text": "Honestly, the biggest thing for me lately is the sheer volume of work.",
+            "tag": "disclosure"
+          },
+          {
+            "sender": "Vieno",
+            "text": "Thank you for saying that, Sam. No hurry at all, go ahead if you want to add anything.",
+            "tag": "facilitation"
+          },
+          {
+            "sender": "Sam",
+            "text": "I hit a wall last week and never said anything to my supervisor.",
+            "tag": "disclosure"
+          },
+          {
+            "sender": "Vieno",
+            "text": "Thank you for sharing that. I wonder if there was any particular reason for that. We are doing great with time, so if you want to add more, please do.",
+            "tag": "facilitation"
+          },
+          {
+            "sender": "Sam",
+            "text": "I keep quiet because it would look like I can't handle the job.",
+            "tag": "disclosure"
+          },
+          {
+            "sender": "Vieno",
+            "text": "That's not an easy thing to admit, Sam. We're happy to listen further, whenever you're ready.",
+            "tag": "facilitation"
+          },
+          {
+            "sender": "Sam",
+            "text": "It feels like if I ask for help, they will think I don't belong here.",
+            "tag": "disclosure"
+          },
+          {
+            "sender": "Vieno",
+            "text": "That's not an easy thing to put into words. [User's Name], is there a specific moment recently where you felt overwhelmed by expectations but felt you couldn't share it?",
+            "tag": "ack"
+          }
+        ],
+        "STATE_CHAT_STAGE_3": [
+          {
+            "sender": "Vieno",
+            "text": "We've covered a lot of ground. Is there a specific professional or academic challenge you'd feel comfortable going into?",
+            "tag": "question"
+          },
+          {
+            "sender": "Sam",
+            "text": "It's exhausting pretending everything is fine all the time.",
+            "tag": "disclosure"
+          },
+          {
+            "sender": "Vieno",
+            "text": "Sam, thank you for sharing that. Feel free to continue, there's no pressure to stop there.",
+            "tag": "facilitation"
+          },
+          {
+            "sender": "Sam",
+            "text": "You feel like you have to wear a mask just to get through the day.",
+            "tag": "disclosure"
+          },
+          {
+            "sender": "Vieno",
+            "text": "Has talking about it here changed that at all? There's plenty of time left, if you want share more about it.",
+            "tag": "facilitation"
+          },
+          {
+            "sender": "Sam",
+            "text": "A bit, actually. Talking about it like this makes me feel less alone with it.",
+            "tag": "disclosure"
+          },
+          {
+            "sender": "Vieno",
+            "text": "That's good to hear, Sam. Go on if you'd like, we're glad to keep listening.",
+            "tag": "facilitation"
+          },
+          {
+            "sender": "Sam",
+            "text": "It helps to know that other people are secretly struggling with the same things.",
+            "tag": "disclosure"
+          },
+          {
+            "sender": "Vieno",
+            "text": "Thank you, Sam. [User's Name], is there a specific professional or academic challenge you'd feel comfortable going into?",
+            "tag": "ack"
+          }
+        ]
+      }
+    },
+    "3-1": {
+      "label": "Host and two disclosing peers",
+      "stages": {
+        "STATE_CHAT_STAGE_1": [
+          {
+            "sender": "Vieno",
+            "text": "Hi everyone, thanks for joining today. I'm Vieno, and I'll be hosting this chat. We'll spend a short time talking through everyday work and study pressures, and nothing said here is used against you, it's only recorded for research purposes.",
+            "tag": "open"
+          },
+          {
+            "sender": "Vieno",
+            "text": "Sam, Charlie, would you like to say a quick hello before we start?",
+            "tag": "open"
+          },
+          {
+            "sender": "Sam",
+            "text": "Hey, glad to be here.",
+            "tag": "peer-neutral"
+          },
+          {
+            "sender": "Charlie",
+            "text": "Hi all.",
+            "tag": "peer-neutral"
+          },
+          {
+            "sender": "Vieno",
+            "text": "Let's start with the everyday stuff. What are the typical challenges you face in your daily professional or academic life?",
+            "tag": "question"
+          },
+          {
+            "sender": "Sam",
+            "text": "For me it's mostly juggling a lot of small tasks.",
+            "tag": "peer-neutral"
+          },
+          {
+            "sender": "Vieno",
+            "text": "That sounds familiar, Sam. There's no rush at all, feel free to say more if you'd like.",
+            "tag": "facilitation"
+          },
+          {
+            "sender": "Sam",
+            "text": "It feels like there are never enough hours in the day.",
+            "tag": "peer-neutral"
+          },
+          {
+            "sender": "Vieno",
+            "text": "Thanks, Sam. Charlie, does something similar come up for you?",
+            "tag": "facilitation"
+          },
+          {
+            "sender": "Charlie",
+            "text": "Same here, mostly trying to keep my calendar under control.",
+            "tag": "peer-neutral"
+          },
+          {
+            "sender": "Vieno",
+            "text": "That makes sense, Charlie. Take all the time you need, we're glad to hear more.",
+            "tag": "facilitation"
+          },
+          {
+            "sender": "Charlie",
+            "text": "Just managing my schedule is a constant struggle, especially towards the end of term.",
+            "tag": "peer-neutral"
+          },
+          {
+            "sender": "Vieno",
+            "text": "Thanks both. [User's Name], what are the typical challenges you face in your daily professional or academic life?",
+            "tag": "ack"
+          }
+        ],
+        "STATE_CHAT_STAGE_2": [
+          {
+            "sender": "Vieno",
+            "text": "Let's go a bit deeper. Is there a specific moment recently where you felt overwhelmed by expectations but felt you couldn't share it?",
+            "tag": "question"
+          },
+          {
+            "sender": "Sam",
+            "text": "Honestly, the biggest thing for me lately is the sheer volume of work.",
+            "tag": "disclosure"
+          },
+          {
+            "sender": "Vieno",
+            "text": "Thank you for saying that, Sam. No hurry at all, go ahead if you want to add anything.",
+            "tag": "facilitation"
+          },
+          {
+            "sender": "Sam",
+            "text": "I hit a wall last week and never said anything to my supervisor.",
+            "tag": "disclosure"
+          },
+          {
+            "sender": "Vieno",
+            "text": "Charlie, what stops you from mentioning it? We are doing great with time, so if you want to add more, please do.",
+            "tag": "facilitation"
+          },
+          {
+            "sender": "Charlie",
+            "text": "Same here. I keep quiet because it would look like I can't handle the job.",
+            "tag": "disclosure"
+          },
+          {
+            "sender": "Vieno",
+            "text": "That's not easy to admit, Charlie. We're happy to listen further, whenever you're ready.",
+            "tag": "facilitation"
+          },
+          {
+            "sender": "Charlie",
+            "text": "It feels like if I ask for help, they will think I don't belong here.",
+            "tag": "disclosure"
+          },
+          {
+            "sender": "Vieno",
+            "text": "That's not an easy thing to put into words, thank you Charlie.",
+            "tag": "facilitation"
+          },
+          {
+            "sender": "Vieno",
+            "text": "[User's Name], is there a specific moment recently where you felt overwhelmed by expectations but felt you couldn't share it?",
+            "tag": "ack"
+          }
+        ],
+        "STATE_CHAT_STAGE_3": [
+          {
+            "sender": "Vieno",
+            "text": "We've covered a lot of ground. Is there a specific professional or academic challenge you'd feel comfortable going into?",
+            "tag": "question"
+          },
+          {
+            "sender": "Sam",
+            "text": "It's exhausting pretending everything is fine all the time.",
+            "tag": "disclosure"
+          },
+          {
+            "sender": "Vieno",
+            "text": "Sam, thank you for sharing that. Feel free to continue, there's no pressure to stop there.",
+            "tag": "facilitation"
+          },
+          {
+            "sender": "Sam",
+            "text": "You feel like you have to wear a mask just to get through the day.",
+            "tag": "disclosure"
+          },
+          {
+            "sender": "Vieno",
+            "text": "Charlie, has talking about it here changed that at all? There's plenty of time left, if you want share more about it.",
+            "tag": "facilitation"
+          },
+          {
+            "sender": "Charlie",
+            "text": "A bit, yeah. Talking about it like this makes me feel less alone with it.",
+            "tag": "disclosure"
+          },
+          {
+            "sender": "Vieno",
+            "text": "That's good to hear, Charlie. Go on if you'd like, we're glad to keep listening.",
+            "tag": "facilitation"
+          },
+          {
+            "sender": "Charlie",
+            "text": "It helps to know that other people are secretly struggling with the same things.",
+            "tag": "disclosure"
+          },
+          {
+            "sender": "Vieno",
+            "text": "I can see what you mean by that, thank you Charlie.",
+            "tag": "facilitation"
+          },
+          {
+            "sender": "Vieno",
+            "text": "[User's Name], is there a specific professional or academic challenge you'd feel comfortable going into?",
+            "tag": "ack"
+          }
+        ]
+      }
+    }
+  }
+}
