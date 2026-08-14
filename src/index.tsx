@@ -138,9 +138,14 @@ if (!isLocal && !API_BASE_URL) {
 // participant's turn number within the current stage, 1 or 2, which the backend
 // uses to decide whether the fixed invitation to add more is appended.
 //
-// Where the stage ends is not read off this reply. Both sides derive it from
-// the turn index, so a request that never completes cannot shorten a stage.
-const MIRROR_MARKS = ['generated', 'declined', 'not-serious'] as const;
+// Where the stage ends is read off `advance` in this reply: true on a
+// decline, or when the host judged from the participant's own words that
+// they are done. A request that never completes reports no acknowledgement
+// at all and never advances — see the `advance: false` fallback below.
+// Marks that carry a real acknowledgement in `text`. 'error' carries none: the
+// participant is shown an apology dialog instead, never a substituted line
+// pretending to be Vieno's.
+const MIRROR_TEXT_MARKS = ['generated', 'declined', 'not-serious'] as const;
 
 const requestMirror = async (
   sessionId: string,
@@ -151,7 +156,8 @@ const requestMirror = async (
   declined: boolean
 ): Promise<{
   text: string;
-  mirror: 'generated' | 'fallback' | 'declined' | 'not-serious';
+  mirror: 'generated' | 'error' | 'declined' | 'not-serious';
+  advance: boolean;
 }> => {
   const response = await fetch(`${API_BASE_URL}/api/mirror`, {
     method: 'POST',
@@ -165,12 +171,23 @@ const requestMirror = async (
       declined,
     }),
   });
-  if (!response.ok) throw new Error('mirror unavailable');
+  // A non-OK response and a malformed payload are both reported to the caller
+  // as an error turn (no text, mirror: 'error'), never masked behind a
+  // substituted acknowledgement — see ChatInterface's error dialog. It also
+  // never advances the stage: a request that failed said nothing the
+  // participant could have signalled readiness through.
+  if (!response.ok) {
+    return { text: '', mirror: 'error', advance: false };
+  }
   const payload = await response.json();
-  return {
-    text: typeof payload.text === 'string' ? payload.text : 'Thanks for sharing that.',
-    mirror: MIRROR_MARKS.includes(payload.mirror) ? payload.mirror : 'fallback',
-  };
+  if (
+    MIRROR_TEXT_MARKS.includes(payload.mirror) &&
+    typeof payload.text === 'string' &&
+    payload.text !== ''
+  ) {
+    return { text: payload.text, mirror: payload.mirror, advance: payload.advance === true };
+  }
+  return { text: '', mirror: 'error', advance: false };
 };
 
 function App() {

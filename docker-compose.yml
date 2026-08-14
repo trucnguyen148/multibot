@@ -1,7 +1,8 @@
 services:
   backend:
     build:
-      context: ./src/go
+      context: .
+      dockerfile: src/go/Dockerfile
     ports:
       - "8080:8080"
     environment:
@@ -9,6 +10,7 @@ services:
       - DATA_DIR=/data
       - ALLOWED_ORIGIN=${ALLOWED_ORIGIN:-*}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:?OPENROUTER_API_KEY must be set in .env}
+      - EXPORT_SECRET=${EXPORT_SECRET:?EXPORT_SECRET must be set in .env}
     volumes:
       - sessions-db:/data
     healthcheck:

@@ -1,9 +1,24 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Box, Paper, Typography, TextField, IconButton, Button, Avatar, Fade } from '@mui/material';
+import {
+  Box,
+  Paper,
+  Typography,
+  TextField,
+  IconButton,
+  Button,
+  Avatar,
+  Fade,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions,
+} from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import PersonIcon from '@mui/icons-material/Person';
 import AssessmentIcon from '@mui/icons-material/Assessment';
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutlineOutlined';
 
 // Bot messages are delayed in proportion to their length, so the pacing reads as
 // someone typing rather than pasting. 350ms per word is roughly 170 words per
@@ -25,13 +40,6 @@ const BOT_AVATAR_COLORS: Record<string, string> = {
   Charlie: '#FB8C00',
 };
 const DEFAULT_BOT_AVATAR_COLOR = 'grey.500';
-
-// Participant turns in every stage, for every participant, in every condition:
-// the answer to the stage's question, then one optional chance to add more.
-// Mirrors mirrorTurnsPerStage in mirror.go. Both sides compute the same thing
-// from the same turn index, so the structure holds even when the server is
-// unreachable and no reply comes back at all.
-const MIRROR_TURNS_PER_STAGE = 2;
 
 const typingDelayFor = (text: string): number => {
   const wordCount = text.split(/\s+/).filter((word) => word.length > 0).length;
@@ -56,24 +64,30 @@ interface ChatMessage {
   isAssessment?: boolean;
   assessmentScore?: number;
   // Present only on a host turn produced at runtime. Lets the export tell
-  // generated text from script, a real acknowledgement from a timed-out one,
+  // generated text from script, a real acknowledgement from an error turn,
   // and a stage the participant closed by declining the invitation, when the
   // transcripts are coded.
-  mirror?: 'generated' | 'fallback' | 'declined' | 'not-serious';
+  mirror?: 'generated' | 'error' | 'declined' | 'not-serious';
 }
 
-// What the host says when the backend cannot be reached at all. The backend has
-// its own copy of these lines for when generation fails on its side; these only
-// cover the network never getting there, and must stay identical to the
-// constants in mirror.go or the two paths read differently in one transcript.
-const MIRROR_FALLBACK = 'Thanks for sharing that.';
-const MIRROR_INVITATION =
-  'Take your time if there is anything else you would like to explore about this, or let me know when you are ready to continue.';
+// What the host says when the backend cannot be reached at all, or replies
+// with something malformed. The backend has its own copy of these lines; both
+// must stay identical to the constants in mirror.go or the two paths read
+// differently in one transcript.
+const MIRROR_ERROR_MESSAGE =
+  "We're sorry, something went wrong on our end and we could not process your message. Please let us know this happened by sending us a message via Prolific.";
 const MIRROR_DECLINE_ACK = 'That is completely fine, thank you.';
 
 interface MirrorReply {
+  // Empty when mirror is 'error': there is no acknowledgement to show, only
+  // the error dialog.
   text: string;
-  mirror: 'generated' | 'fallback' | 'declined' | 'not-serious';
+  mirror: 'generated' | 'error' | 'declined' | 'not-serious';
+  // Whether this turn closes the stage. True on a decline, or when the host
+  // judged from the participant's own words that they said plainly they are
+  // done. False on every failure path, so a stage never ends because
+  // generation happened to fail rather than because the participant said so.
+  advance: boolean;
 }
 
 // What playMirror sends as `history`: the conversation so far, oldest first,
@@ -92,9 +106,9 @@ interface ChatInterfaceProps {
   conditionScripts: Record<string, BotScript[]>;
   testMode?: boolean;
   // Absent only when there is no server session at all, which is the offline
-  // fallback path where nothing is being saved anyway. The stage structure is
-  // the same either way, since it depends on the turn index rather than on
-  // anything the server returns.
+  // fallback path where nothing is being saved anyway. Offline, a stage can
+  // only be closed by an explicit decline, since there is no host to judge
+  // readiness from what was typed.
   requestMirror?: (
     userText: string,
     stage: string,
@@ -137,6 +151,10 @@ export const ChatInterface = ({
   // does not re-render.
   const [canDecline, setCanDecline] = useState<boolean>(false);
   const [inputValue, setInputValue] = useState<string>('');
+  // Set whenever a mirror turn could not produce a real acknowledgement, so an
+  // explicit apology dialog is shown instead of quietly substituting fixed
+  // text into the transcript as if Vieno had said it.
+  const [mirrorError, setMirrorError] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const stageStartedRef = useRef<Record<string, boolean>>({});
@@ -148,11 +166,11 @@ export const ChatInterface = ({
   // Same reason as messagesRef. The stage 3 rating is set and used within one
   // event, so state has not committed by the time the closing timeout reads it.
   const latestStage3Ref = useRef<number>(0);
-  // The participant's turn number within the current stage, 1 or 2, reset when
-  // the stage changes. This is the only thing that decides where a stage ends,
-  // on both sides: the server reads it to decide whether to append the
-  // invitation, and this component reads it to decide whether the comfort
-  // check-in follows.
+  // The participant's turn number within the current stage, 1 for the first,
+  // 2 for the next, and so on, reset when the stage changes. Sent to the
+  // server for logging only; it no longer decides where the stage ends. That
+  // is now decided per turn by the mirror reply's `advance` flag (a decline,
+  // or the host judging from the participant's own words that they are done).
   const turnsThisStageRef = useRef<number>(0);
 
   const scrollToBottom = () => {
@@ -216,25 +234,25 @@ export const ChatInterface = ({
 
   // Plays the host's reply to what the participant just wrote, or to their
   // decline. Never throws: a failure here must not strand a participant
-  // mid-study, and it must not change where the stage ends either.
+  // mid-study, and it must not change where the stage ends either. A failure
+  // is shown to the participant as an explicit error dialog rather than a
+  // substituted chat message, so it is never mistaken for something Vieno
+  // actually said.
   const playMirror = async (
     userText: string,
     stage: string,
     turnIndex: number,
     declined = false
   ): Promise<MirrorReply> => {
-    // What the host says when the request never reaches the server. A decline
-    // needs nothing generated, so offline it is not a degraded reply at all and
-    // is marked as the decline it is rather than as a fallback.
+    // What the host says when the request never reaches the server at all. A
+    // decline needs nothing generated, so offline it is not a degraded reply
+    // at all and is marked as the decline it is rather than as an error. A
+    // non-decline offline reply never advances the stage: there is no host to
+    // judge readiness from what was typed, so only the decline button can end
+    // a stage while offline.
     const offline: MirrorReply = declined
-      ? { text: MIRROR_DECLINE_ACK, mirror: 'declined' }
-      : {
-          text:
-            turnIndex < MIRROR_TURNS_PER_STAGE
-              ? `${MIRROR_FALLBACK} ${MIRROR_INVITATION}`
-              : MIRROR_FALLBACK,
-          mirror: 'fallback',
-        };
+      ? { text: MIRROR_DECLINE_ACK, mirror: 'declined', advance: true }
+      : { text: '', mirror: 'error', advance: false };
 
     const startedAt = Date.now();
     setIsTyping(true);
@@ -247,15 +265,15 @@ export const ChatInterface = ({
       .filter((msg) => !msg.isAssessment)
       .map((msg) => ({ sender: msg.sender, text: msg.text, isUser: msg.isUser === true }));
 
-    // A failure costs one acknowledgement and never a turn. Where the stage
-    // ends is decided by the caller from the turn index alone, so a participant
-    // who hits a network blip still gets the same structure as everyone else.
+    // A failure costs one acknowledgement and never a turn: `advance` is false
+    // on every failure path, so a participant who hits a network blip is
+    // simply invited to continue rather than having their stage cut short.
     let reply: MirrorReply = offline;
     if (requestMirror) {
       try {
         reply = await requestMirror(userText, stage, history, turnIndex, declined);
       } catch {
-        // Keep the offline line: the network never reached the server at all.
+        // Keep the offline reply: the network never reached the server at all.
         reply = offline;
       }
     }
@@ -270,6 +288,14 @@ export const ChatInterface = ({
     }
 
     setIsTyping(false);
+
+    if (reply.mirror === 'error') {
+      // No acknowledgement to show: surface the failure directly instead of
+      // inventing a line and adding it to the transcript as Vieno's turn.
+      setMirrorError(MIRROR_ERROR_MESSAGE);
+      return reply;
+    }
+
     setMessages((prev) => [
       ...prev,
       {
@@ -302,19 +328,18 @@ export const ChatInterface = ({
     setAwaitingUser(false);
     setCanDecline(false);
 
-    // Every stage runs the same two turns for every participant: their answer,
-    // the host's acknowledgement carrying one invitation to add more, their
-    // optional second turn, the host's closing acknowledgement. Nothing about
-    // what was written, or about whether generation succeeded, changes that.
-    //
-    // A submission the host judges not to be a serious answer costs the turn
-    // like any other. She says so once and the conversation carries on, so the
-    // structure is identical for everyone regardless of what anyone writes.
+    // A stage no longer runs a fixed number of turns. It continues, one turn
+    // at a time, until the participant ends it themselves: either by clicking
+    // "Nothing more to share" (handleDecline below) or by saying, in their own
+    // words, that they are done — which the host judges and reports back as
+    // `advance`. A submission the host judges not to be a serious answer
+    // never advances the stage on its own; it costs the turn like any other
+    // and the conversation carries on.
     const turnIndex = turnsThisStageRef.current + 1;
-    await playMirror(userMsg.text, internalStage, turnIndex);
+    const reply = await playMirror(userMsg.text, internalStage, turnIndex);
 
     turnsThisStageRef.current = turnIndex;
-    if (turnIndex >= MIRROR_TURNS_PER_STAGE) {
+    if (reply.advance) {
       askForComfort(internalStage);
     } else {
       setAwaitingUser(true);
@@ -323,15 +348,17 @@ export const ChatInterface = ({
   };
 
   // The other half of the invitation. Declining is a real answer, so it ends
-  // the stage exactly where a typed second turn would, and is recorded as a
-  // host turn marked "declined" with no participant message. That keeps a
-  // decline a genuine zero in the word counts instead of the word "no".
+  // the stage exactly where a typed message saying the same thing would, and
+  // is recorded as a host turn marked "declined" with no participant message.
+  // That keeps a decline a genuine zero in the word counts instead of the
+  // word "no".
   const handleDecline = async () => {
     setInputValue('');
     setAwaitingUser(false);
     setCanDecline(false);
-    turnsThisStageRef.current = MIRROR_TURNS_PER_STAGE;
-    await playMirror('', internalStage, MIRROR_TURNS_PER_STAGE, true);
+    const turnIndex = turnsThisStageRef.current + 1;
+    turnsThisStageRef.current = turnIndex;
+    await playMirror('', internalStage, turnIndex, true);
     askForComfort(internalStage);
   };
 
@@ -406,20 +433,21 @@ export const ChatInterface = ({
     internalStage === 'STATE_CLOSING' && messages.length > 0 && messages.at(-1)?.sender === 'Vieno';
 
   return (
-    <Fade in={!isClosing} timeout={1000}>
-      <Paper
-        elevation={3}
-        sx={{
-          display: 'flex',
-          flexDirection: 'column',
-          height: '80vh',
-          maxWidth: '100vh',
-          margin: '0 auto',
-          overflow: 'hidden',
-          borderRadius: 2,
-        }}
-      >
-        <Box
+    <>
+      <Fade in={!isClosing} timeout={1000}>
+        <Paper
+          elevation={3}
+          sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            height: '80vh',
+            maxWidth: '100vh',
+            margin: '0 auto',
+            overflow: 'hidden',
+            borderRadius: 2,
+          }}
+        >
+          <Box
           sx={{
             p: 2,
             bgcolor: 'primary.main',
@@ -597,6 +625,24 @@ export const ChatInterface = ({
         </Box>
 
         <Box sx={{ p: 2, bgcolor: 'background.paper', borderTop: 1, borderColor: 'divider' }}>
+          {/* The invitation to add more is optional, so there has to be a way
+              to take it and add nothing. Without this the input box is the
+              only way forward and a participant with nothing left to say has
+              to invent something, which is a demand characteristic sitting
+              directly on the disclosure measure. */}
+          {canDecline && (
+            <Box sx={{ display: 'flex', justifyContent: 'center', mb: 1.5 }}>
+              <Button
+                variant="outlined"
+                size="medium"
+                onClick={() => void handleDecline()}
+                disabled={!awaitingUser}
+                sx={{ textTransform: 'none' }}
+              >
+                Nothing more to share, let's continue
+              </Button>
+            </Box>
+          )}
           <Box sx={{ display: 'flex', gap: 1 }}>
             <TextField
               fullWidth
@@ -615,33 +661,6 @@ export const ChatInterface = ({
               multiline
               maxRows={3}
             />
-            {/* The invitation to add more is optional, so there has to be a way
-                to take it and add nothing. Without this the input box is the
-                only way forward and a participant with nothing left to say has
-                to invent something, which is a demand characteristic sitting
-                directly on the disclosure measure. */}
-            {canDecline && (
-              <Button
-                variant="text"
-                size="small"
-                onClick={() => void handleDecline()}
-                disabled={!awaitingUser}
-                sx={{
-                  alignSelf: 'flex-end',
-                  whiteSpace: 'nowrap',
-                  // MUI shouts by default. This is a quiet way out of an
-                  // optional question sitting next to the send button, so it
-                  // should read as a link rather than compete with it.
-                  textTransform: 'none',
-                  color: 'text.secondary',
-                  fontWeight: 400,
-                  px: 1,
-                  '&:hover': { bgcolor: 'transparent', color: 'text.primary' },
-                }}
-              >
-                Nothing to add
-              </Button>
-            )}
             <IconButton
               color="primary"
               onClick={() => void handleUserSubmit()}
@@ -652,7 +671,23 @@ export const ChatInterface = ({
             </IconButton>
           </Box>
         </Box>
-      </Paper>
-    </Fade>
+        </Paper>
+      </Fade>
+
+      <Dialog open={mirrorError !== null} onClose={() => setMirrorError(null)}>
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <ErrorOutlineIcon color="error" />
+          Something went wrong
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText>{mirrorError}</DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setMirrorError(null)} autoFocus>
+            OK
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </>
   );
 };
