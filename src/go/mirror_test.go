@@ -273,27 +273,31 @@ func TestHostReplyInvitationSurvivesSanitizing(t *testing.T) {
 	}
 }
 
-func TestSanitizeMirrorCollapsesToTwoSentences(t *testing.T) {
+// sanitizeMirror strips markup and nothing else. It used to truncate to two
+// sentences and a word budget; that was removed on 2026-08-16 after the
+// two-sentence cut silently ate the closing invitation on every turn, because
+// the prompt asks for three sentences. Length is bounded by mirrorMaxTokens on
+// the request, and how the reply reads is the prompt's job now.
+func TestSanitizeMirrorStripsMarkupAndNothingElse(t *testing.T) {
 	cases := []struct {
 		name string
 		in   string
 		want string
 	}{
-		{"already one sentence", "That sounds like a lot to carry.", "That sounds like a lot to carry."},
+		{"leaves one sentence alone", "That sounds like a lot to carry.", "That sounds like a lot to carry."},
 		{"trims whitespace", "  That sounds hard.  ", "That sounds hard."},
 		{"keeps the acknowledgement and the invitation", "That sounds hard. " + mirrorInvitation, "That sounds hard. " + mirrorInvitation},
-		// A third sentence beyond the acknowledgement and the invitation is
-		// clamped away: two sentences is the model's whole budget, and a third
-		// one reaching the participant is advice or interpretation, which
-		// changes what the study measured.
-		{"drops a third sentence", "That sounds hard. " + mirrorInvitation + " You should talk to someone.", "That sounds hard. " + mirrorInvitation},
+		// The three-sentence shape the prompt actually asks for: thanks,
+		// acknowledgement of feeling, then the fixed invitation. All of it has
+		// to survive, or the participant is never told there is time to say more.
+		{
+			"keeps thanks, acknowledgement and invitation",
+			"Thank you for sharing that. It sounds like that has been weighing on you. " + mirrorInvitation,
+			"Thank you for sharing that. It sounds like that has been weighing on you. " + mirrorInvitation,
+		},
 		{"drops a leaked reasoning block", "<thinking>hm</thinking>That sounds hard.", "That sounds hard."},
 		{"drops a stray unpaired tag", "That sounds <b>hard.", "That sounds hard."},
-		// A terminator inside a word is not a sentence end, so a decimal or a
-		// URL does not split the reply mid-token.
-		{"a terminator inside a word is not a sentence end", "You lost 2.5 days to that.", "You lost 2.5 days to that."},
-		// Too short to be a sentence on its own, so the reply continues.
-		{"a leading fragment does not end the sentence", "Ah. That sounds really hard.", "Ah. That sounds really hard."},
+		{"a terminator inside a word survives", "You lost 2.5 days to that.", "You lost 2.5 days to that."},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -308,38 +312,17 @@ func TestSanitizeMirrorCollapsesToTwoSentences(t *testing.T) {
 	}
 }
 
-// Nothing usable must never be papered over with a substitute line: the
-// caller is responsible for reporting this to the participant as an error.
-func TestSanitizeMirrorReportsNotOkWhenNothingSurvives(t *testing.T) {
-	cases := []struct {
-		name string
-		in   string
-	}{
-		{"empty", "   "},
-		{"tags only", "<thinking>hm</thinking>"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got, ok := sanitizeMirror(tc.in)
-			if ok {
-				t.Errorf("sanitizeMirror(%q) reported ok with cleaned = %q, want not ok", tc.in, got)
-			}
-			if got != "" {
-				t.Errorf("sanitizeMirror(%q) = %q, want empty when not ok", tc.in, got)
-			}
-		})
-	}
-}
-
-func TestSanitizeMirrorBoundsLength(t *testing.T) {
+// A long reply is passed through untouched now. Bounding it is mirrorMaxTokens'
+// job on the request, not a post-hoc trim that can cut mid-thought.
+func TestSanitizeMirrorDoesNotTruncate(t *testing.T) {
 	long := strings.Repeat("word ", 200) + "."
 	got, ok := sanitizeMirror(long)
 	if !ok {
 		t.Fatalf("sanitizeMirror(_) reported not ok, want ok")
 	}
-	wordLimit := maxMirrorWords + len(strings.Fields(mirrorInvitationAlt))
-	if len(strings.Fields(got)) > wordLimit {
-		t.Errorf("sanitizeMirror(_) returned %d words, want at most %d", len(strings.Fields(got)), wordLimit)
+	if want := strings.TrimSpace(long); got != want {
+		t.Errorf("sanitizeMirror truncated a long reply to %d words, want all %d",
+			len(strings.Fields(got)), len(strings.Fields(want)))
 	}
 }
 

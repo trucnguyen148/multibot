@@ -84,8 +84,6 @@ const (
 	// A chat message cannot legitimately be book length. Trimming bounds both
 	// what is sent to a third party and what it costs.
 	maxMirrorInputChars = 4000
-	// Hard ceiling on the visible reply, applied whatever the model returns.
-	maxMirrorWords = 30
 	// Emitted by the host, on its own, when the participant's message is not an
 	// attempt to answer at all. This is a judgment about whether there is an
 	// answer present, never about whether the answer is good enough, and it
@@ -254,72 +252,37 @@ func clampMirrorInput(text string) string {
 	return trimmed
 }
 
-// firstSentences returns the leading n sentences. A terminator counts only
-// when it ends a word and leaves at least three words behind it, so a
-// decimal, a URL, or a one-word opener does not split the reply mid-token.
+// sanitizeMirror removes what the model should never have emitted and nothing
+// else. The prompt owns how the reply reads: its length, its tone, and how many
+// sentences it runs to.
 //
-// It is otherwise deliberately aggressive, and will cut at an abbreviation
-// like "esp." rather than try to recognise one. The asymmetry is the point: a
-// clipped acknowledgement is cosmetic, whereas an extra sentence surviving
-// into the chat is advice or interpretation reaching a participant, which
-// changes what the study measured.
-func firstSentences(text string, n int) string {
-	found := 0
-	for i := 0; i < len(text); i++ {
-		switch text[i] {
-		case '.', '!', '?':
-		default:
-			continue
-		}
-		rest := text[i+1:]
-		if rest == "" {
-			return text
-		}
-		if r := rest[0]; r != ' ' && r != '\n' && r != '\t' && r != '\r' {
-			continue
-		}
-		if len(strings.Fields(text[:i])) < 3 {
-			continue
-		}
-		found++
-		if found >= n {
-			return strings.TrimSpace(text[:i+1])
-		}
-	}
-	return text
-}
-
-// sanitizeMirror enforces the sentence-count and length contract regardless of
-// what came back, so a misbehaving generation cannot change the participant's
-// experience. The prompt asks the model for a second, fixed closing sentence
-// (mirrorInvitation) alongside its acknowledgement on every turn, so two
-// sentences and a higher word budget are allowed through rather than one.
+// It used to truncate as well, to two sentences and a word budget. That was
+// removed on 2026-08-16 because the truncation started fighting the prompt
+// rather than backing it up. The prompt asks for a thank-you, an acknowledgement
+// of feeling, and a fixed closing invitation, which is three sentences, and the
+// two-sentence cut silently ate the invitation on every single turn. A
+// walkthrough on production caught it; no test did, because both halves passed
+// their own tests separately. Length is already bounded hard by mirrorMaxTokens
+// on the request, so an unbounded reply is not reachable from here anyway.
 //
-// Returns ok=false when nothing usable survives cleaning (an empty reply, or
-// one that was tags only). The caller must then treat this exactly like a
-// generation failure — report it to the participant as an error, never as an
-// acknowledgement Vieno did not actually give.
+// What stays is the pair of failures a prompt cannot prevent, since both are the
+// model ignoring the prompt outright:
+//
+//   - Leaked markup. A reasoning block reaching a participant ends the illusion
+//     for them completely, and asking nicely does not stop it.
+//   - An empty reply. Returning ok=false routes it to the error path, so Vieno
+//     never posts a blank speech bubble.
+//
+// Returns ok=false when nothing usable survives (an empty reply, or one that was
+// tags only). The caller must treat that exactly like a generation failure and
+// report it to the participant as an error, never as an acknowledgement Vieno
+// did not actually give.
 func sanitizeMirror(raw string) (cleaned string, ok bool) {
 	cleaned = raw
 	if matches := closingTagPattern.FindAllStringIndex(cleaned, -1); len(matches) > 0 {
 		cleaned = cleaned[matches[len(matches)-1][1]:]
 	}
 	cleaned = strings.TrimSpace(anyTagPattern.ReplaceAllString(cleaned, ""))
-	if cleaned == "" {
-		return "", false
-	}
-
-	sentenceLimit := 2
-	wordLimit := maxMirrorWords + len(strings.Fields(mirrorInvitationAlt))
-	cleaned = firstSentences(cleaned, sentenceLimit)
-
-	if words := strings.Fields(cleaned); len(words) > wordLimit {
-		cleaned = strings.Join(words[:wordLimit], " ")
-		if !strings.HasSuffix(cleaned, ".") {
-			cleaned += "."
-		}
-	}
-
 	if cleaned == "" {
 		return "", false
 	}
